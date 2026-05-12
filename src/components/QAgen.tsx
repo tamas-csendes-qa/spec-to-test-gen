@@ -12,6 +12,41 @@ import {
 type Format = "gherkin" | "zephyr";
 type Lang = "hu" | "en";
 
+const STRINGS = {
+  hu: {
+    subtitle: "Specifikációból tesztesetek – másodpercek alatt",
+    dropHere: "Húzd ide a specifikációt",
+    dropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 30 oldal",
+    pickAnother: "kattints másik fájl kiválasztásához",
+    formatLabel: "Kimeneti formátum",
+    generate: "Tesztesetek generálása",
+    generating: "Generálás folyamatban…",
+    result: "Eredmény",
+    download: "Letöltés",
+    ready: "Készen áll a letöltésre",
+    downloadFile: "Fájl letöltése",
+    footer: "QAgen v0.1.0 · mock előnézet — a backend még nincs bekötve",
+    toggleLang: "Nyelv váltása",
+    toggleDark: "Sötét mód váltása",
+  },
+  en: {
+    subtitle: "From specification to test cases – in seconds",
+    dropHere: "Drop the specification here",
+    dropHint: "or click to browse · PDF, DOCX, XLSX · max 30 pages",
+    pickAnother: "click to pick another file",
+    formatLabel: "Output format",
+    generate: "Generate test cases",
+    generating: "Generating…",
+    result: "Result",
+    download: "Download",
+    ready: "Ready to download",
+    downloadFile: "Download file",
+    footer: "QAgen v0.1.0 · mock preview — backend not yet connected",
+    toggleLang: "Switch language",
+    toggleDark: "Toggle dark mode",
+  },
+} as const;
+
 const ACCEPT = ".pdf,.docx,.xlsx";
 
 const MOCK_GHERKIN_HU = `Feature: Bejelentkezés
@@ -61,6 +96,18 @@ export function QAgen() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("qagen-lang") : null;
+    if (saved === "hu" || saved === "en") setLang(saved);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("qagen-lang", lang);
+    if (typeof document !== "undefined") document.documentElement.lang = lang;
+  }, [lang]);
+
+  const t = STRINGS[lang];
 
   const onPick = (f: File | null) => {
     if (!f) return;
@@ -112,11 +159,19 @@ export function QAgen() {
           </div>
           <div className="flex items-center gap-3">
             <p className="hidden sm:block text-sm text-muted-foreground">
-              Specifikációból tesztesetek – másodpercek alatt
+              {t.subtitle}
             </p>
             <button
+              onClick={() => setLang((l) => (l === "hu" ? "en" : "hu"))}
+              aria-label={t.toggleLang}
+              title={t.toggleLang}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-base leading-none transition-colors hover:bg-accent"
+            >
+              <span aria-hidden>{lang === "hu" ? "🇭🇺" : "🇬🇧"}</span>
+            </button>
+            <button
               onClick={() => setDark((d) => !d)}
-              aria-label="Toggle dark mode"
+              aria-label={t.toggleDark}
               className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -151,7 +206,7 @@ export function QAgen() {
               <FileText className="h-10 w-10 text-primary" />
               <p className="font-mono text-sm">{file.name}</p>
               <p className="text-xs text-muted-foreground">
-                {(file.size / 1024).toFixed(1)} KB · kattints másik fájl kiválasztásához
+                {(file.size / 1024).toFixed(1)} KB · {t.pickAnother}
               </p>
             </div>
           ) : (
@@ -160,9 +215,9 @@ export function QAgen() {
                 <Upload className="h-6 w-6" />
               </div>
               <div>
-                <p className="font-medium">Húzd ide a specifikációt</p>
+                <p className="font-medium">{t.dropHere}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 30 oldal
+                  {t.dropHint}
                 </p>
               </div>
             </div>
@@ -170,35 +225,19 @@ export function QAgen() {
         </div>
 
         {/* Options */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-              Kimeneti formátum
-            </label>
-            <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gherkin">Gherkin</SelectItem>
-                <SelectItem value="zephyr">Zephyr XLSX</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-              Nyelv
-            </label>
-            <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="hu">Magyar</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="mt-6">
+          <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
+            {t.formatLabel}
+          </label>
+          <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="gherkin">Gherkin</SelectItem>
+              <SelectItem value="zephyr">Zephyr XLSX</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Generate */}
@@ -210,10 +249,10 @@ export function QAgen() {
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Generálás folyamatban…
+              {t.generating}
             </>
           ) : (
-            "Tesztesetek generálása"
+            t.generate
           )}
         </Button>
 
@@ -222,12 +261,12 @@ export function QAgen() {
           <div className="mt-8 animate-fade-in">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Eredmény
+                {t.result}
               </h2>
               {format === "zephyr" && (
                 <Button variant="outline" size="sm" onClick={downloadXlsx}>
                   <Download className="h-4 w-4" />
-                  Letöltés
+                  {t.download}
                 </Button>
               )}
             </div>
@@ -236,11 +275,11 @@ export function QAgen() {
                 <FileText className="h-10 w-10 mx-auto text-primary mb-3" />
                 <p className="font-medium">qagen-zephyr.xlsx</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Készen áll a letöltésre
+                  {t.ready}
                 </p>
                 <Button onClick={downloadXlsx} className="mt-4">
                   <Download className="h-4 w-4" />
-                  Fájl letöltése
+                  {t.downloadFile}
                 </Button>
               </div>
             ) : (
@@ -252,7 +291,7 @@ export function QAgen() {
         )}
 
         <footer className="mt-16 text-center text-xs text-muted-foreground">
-          QAgen v0.1.0 · mock előnézet — a backend még nincs bekötve
+          {t.footer}
         </footer>
       </div>
     </div>
