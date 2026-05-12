@@ -252,7 +252,7 @@ export function QAgen() {
         )}
 
         <footer className="mt-16 text-center text-xs text-muted-foreground">
-          QAgen · mock előnézet — a backend még nincs bekötve
+          QAgen v0.1.0 · mock előnézet — a backend még nincs bekötve
         </footer>
       </div>
     </div>
