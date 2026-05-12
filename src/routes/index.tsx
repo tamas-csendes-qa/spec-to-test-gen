@@ -1,26 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { QAgen } from "@/components/QAgen";
 
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: QAgen,
+  head: () => ({
+    meta: [
+      { title: "QAgen – Tesztesetek generálása specifikációból" },
+      {
+        name: "description",
+        content:
+          "QAgen: tölts fel egy specifikációt és generálj Gherkin vagy Zephyr XLSX teszteseteket másodpercek alatt.",
+      },
+    ],
+  }),
 });
-
-// IMPORTANT: Replace this placeholder. For sites with multiple pages (About, Services, Contact, etc.),
-// create separate route files (about.tsx, services.tsx, contact.tsx) — don't put all pages in this file.
-function PlaceholderIndex() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
-
-function Index() {
-  return <PlaceholderIndex />;
-}
