@@ -144,8 +144,6 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
-    background-size: 22px 22px;
     transition: background-color 0.3s ease, color 0.3s ease;
   }
 }
