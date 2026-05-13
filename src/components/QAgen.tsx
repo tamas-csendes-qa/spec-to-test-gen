@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Upload, Moon, Sun, FileText, Download, Loader2, Sparkles } from "lucide-react";
+import { Upload, Moon, Sun, FileText, Download, Loader as Loader2, Sparkles, CircleAlert as AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -8,9 +8,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import * as pdfjsLib from "pdfjs-dist";
+import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 type Format = "gherkin" | "zephyr";
 type Lang = "hu" | "en";
+
+interface TestCase {
+  id: string;
+  name: string;
+  preconditions: string;
+  steps: string;
+  expectedResult: string;
+  priority: string;
+}
 
 const STRINGS = {
   hu: {
@@ -25,9 +39,12 @@ const STRINGS = {
     download: "Letöltés",
     ready: "Készen áll a letöltésre",
     downloadFile: "Fájl letöltése",
-    footer: "QAgen v0.1.0 · mock előnézet — a backend még nincs bekötve",
+    footer: "QAgen v0.1.0",
     toggleLang: "Nyelv váltása",
     toggleDark: "Sötét mód váltása",
+    error: "Hiba",
+    fileProcessingError: "Nem sikerült feldolgozni a fájlt",
+    apiError: "API hiba az AI válaszban",
   },
   en: {
     subtitle: "From specification to test cases – in seconds",
@@ -41,13 +58,132 @@ const STRINGS = {
     download: "Download",
     ready: "Ready to download",
     downloadFile: "Download file",
-    footer: "QAgen v0.1.0 · mock preview — backend not yet connected",
+    footer: "QAgen v0.1.0",
     toggleLang: "Switch language",
     toggleDark: "Toggle dark mode",
+    error: "Error",
+    fileProcessingError: "Failed to process file",
+    apiError: "Error from AI response",
   },
 } as const;
 
 const ACCEPT = ".pdf,.docx,.xlsx";
+
+async function extractTextFromFile(file: File): Promise<string> {
+  const filename = file.name.toLowerCase();
+
+  if (filename.endsWith(".pdf")) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let text = "";
+    for (let i = 1; i <= Math.min(pdf.numPages, 30); i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      text += textContent.items.map((item: any) => item.str).join(" ") + "\n";
+    }
+    return text;
+  }
+
+  if (filename.endsWith(".xlsx")) {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: "array" });
+    let text = "";
+    for (const sheet of workbook.SheetNames) {
+      const ws = workbook.Sheets[sheet];
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      text += `Sheet: ${sheet}\n${csv}\n`;
+    }
+    return text;
+  }
+
+  if (filename.endsWith(".docx")) {
+    const arrayBuffer = await file.arrayBuffer();
+    const decoder = new TextDecoder();
+    const text = decoder.decode(arrayBuffer);
+    return text;
+  }
+
+  throw new Error("Unsupported file type");
+}
+
+async function callClaudeAPI(
+  text: string,
+  format: Format,
+  lang: Lang
+): Promise<string> {
+  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("API key not configured");
+  }
+
+  const languageName = lang === "hu" ? "Hungarian" : "English";
+  const formatInstructions =
+    format === "gherkin"
+      ? "use standard Given/When/Then syntax"
+      : "structure the output as a JSON array of test case objects with fields: id, name, preconditions, steps, expectedResult, priority";
+
+  const systemPrompt = `You are an expert software tester. Based on the provided specification, generate comprehensive test cases. If the output format is Gherkin, use standard Given/When/Then syntax. If the output format is Zephyr XLSX, structure the output as a JSON array of test case objects with fields: id, name, preconditions, steps, expectedResult, priority. Generate test cases in ${languageName}.`;
+
+  const userMessage =
+    format === "gherkin"
+      ? `Specification:\n\n${text}\n\nGenerate Gherkin test cases (Feature and Scenarios) based on this specification.`
+      : `Specification:\n\n${text}\n\nGenerate test cases as a JSON array. Each test case should have: id (e.g., "TC-001"), name, preconditions, steps, expectedResult, and priority (High/Medium/Low). Return ONLY valid JSON, no markdown or extra text.`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: userMessage,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || "API request failed");
+  }
+
+  const data = await response.json();
+  return data.content[0].text;
+}
+
+async function generateExcelFile(testCases: TestCase[]): Promise<Blob> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Test Cases");
+
+  worksheet.columns = [
+    { header: "Test Case ID", key: "id", width: 15 },
+    { header: "Test Case Name", key: "name", width: 25 },
+    { header: "Preconditions", key: "preconditions", width: 30 },
+    { header: "Test Steps", key: "steps", width: 40 },
+    { header: "Expected Result", key: "expectedResult", width: 30 },
+    { header: "Priority", key: "priority", width: 12 },
+  ];
+
+  testCases.forEach((tc) => {
+    worksheet.addRow(tc);
+  });
+
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFE7E6E6" },
+  };
+
+  return workbook.xlsx.writeBuffer() as Promise<Blob>;
+}
 
 const MOCK_GHERKIN_HU = `Feature: Bejelentkezés
 
@@ -91,6 +227,8 @@ export function QAgen() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [testCases, setTestCases] = useState<TestCase[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -115,6 +253,8 @@ export function QAgen() {
     if (!ok) return;
     setFile(f);
     setResult(null);
+    setError(null);
+    setTestCases(null);
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -127,23 +267,49 @@ export function QAgen() {
     if (!file) return;
     setLoading(true);
     setResult(null);
-    await new Promise((r) => setTimeout(r, 1200));
-    setResult(lang === "hu" ? MOCK_GHERKIN_HU : MOCK_GHERKIN_EN);
-    setLoading(false);
+    setError(null);
+    setTestCases(null);
+
+    try {
+      const text = await extractTextFromFile(file);
+      const response = await callClaudeAPI(text, format, lang);
+
+      if (format === "gherkin") {
+        setResult(response);
+      } else {
+        const jsonMatch = response.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+          throw new Error("Invalid JSON response from API");
+        }
+        const cases: TestCase[] = JSON.parse(jsonMatch[0]);
+        setTestCases(cases);
+        setResult("generated");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setError(msg);
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const downloadXlsx = () => {
-    const csv =
-      "Key,Summary,Precondition,Step,Test Data,Expected Result\n" +
-      "TC-1,Login success,User on login page,Enter valid creds and submit,valid@test.com / pass,Redirect to home\n" +
-      "TC-2,Login fail,User on login page,Enter wrong password,valid@test.com / wrong,Error shown\n";
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "qagen-zephyr.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+  const downloadXlsx = async () => {
+    if (!testCases) return;
+    try {
+      const buffer = await generateExcelFile(testCases);
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "qagen-test-cases.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate Excel");
+    }
   };
 
   return (
@@ -256,6 +422,23 @@ export function QAgen() {
           )}
         </Button>
 
+        {/* Error */}
+        {error && (
+          <div className="mt-8 animate-fade-in rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-4">
+            <div className="flex gap-3">
+              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-red-900 dark:text-red-200">
+                  {t.error}
+                </p>
+                <p className="text-sm text-red-800 dark:text-red-300 mt-1">
+                  {error}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Result */}
         {result && (
           <div className="mt-8 animate-fade-in">
@@ -263,21 +446,63 @@ export function QAgen() {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                 {t.result}
               </h2>
-              {format === "zephyr" && (
+              {format === "zephyr" && testCases && (
                 <Button variant="outline" size="sm" onClick={downloadXlsx}>
                   <Download className="h-4 w-4" />
                   {t.download}
                 </Button>
               )}
             </div>
-            {format === "zephyr" ? (
-              <div className="rounded-lg border border-border bg-card p-8 text-center">
-                <FileText className="h-10 w-10 mx-auto text-primary mb-3" />
-                <p className="font-medium">qagen-zephyr.xlsx</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {t.ready}
-                </p>
-                <Button onClick={downloadXlsx} className="mt-4">
+            {format === "zephyr" && testCases ? (
+              <div className="rounded-lg border border-border bg-card p-6">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">
+                          ID
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">
+                          Name
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">
+                          Preconditions
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">
+                          Steps
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">
+                          Expected Result
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">
+                          Priority
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {testCases.map((tc, idx) => (
+                        <tr
+                          key={idx}
+                          className="border-b border-border hover:bg-accent/50"
+                        >
+                          <td className="px-3 py-2">{tc.id}</td>
+                          <td className="px-3 py-2">{tc.name}</td>
+                          <td className="px-3 py-2 text-xs">{tc.preconditions}</td>
+                          <td className="px-3 py-2 text-xs">{tc.steps}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {tc.expectedResult}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-block rounded px-2 py-1 text-xs font-medium bg-primary/10 text-primary">
+                              {tc.priority}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Button onClick={downloadXlsx} className="mt-4 w-full">
                   <Download className="h-4 w-4" />
                   {t.downloadFile}
                 </Button>
