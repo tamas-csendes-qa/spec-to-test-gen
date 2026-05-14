@@ -111,51 +111,35 @@ async function callClaudeAPI(
   format: Format,
   lang: Lang
 ): Promise<string> {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("API key not configured");
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("Supabase configuration missing");
   }
 
-  const languageName = lang === "hu" ? "Hungarian" : "English";
-  const formatInstructions =
-    format === "gherkin"
-      ? "use standard Given/When/Then syntax"
-      : "structure the output as a JSON array of test case objects with fields: id, name, preconditions, steps, expectedResult, priority";
+  const apiUrl = `${supabaseUrl}/functions/v1/generate-test-cases`;
 
-  const systemPrompt = `You are an expert software tester. Based on the provided specification, generate comprehensive test cases. If the output format is Gherkin, use standard Given/When/Then syntax. If the output format is Zephyr XLSX, structure the output as a JSON array of test case objects with fields: id, name, preconditions, steps, expectedResult, priority. Generate test cases in ${languageName}.`;
-
-  const userMessage =
-    format === "gherkin"
-      ? `Specification:\n\n${text}\n\nGenerate Gherkin test cases (Feature and Scenarios) based on this specification.`
-      : `Specification:\n\n${text}\n\nGenerate test cases as a JSON array. Each test case should have: id (e.g., "TC-001"), name, preconditions, steps, expectedResult, and priority (High/Medium/Low). Return ONLY valid JSON, no markdown or extra text.`;
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${anonKey}`,
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: userMessage,
-        },
-      ],
+      text,
+      format,
+      lang,
     }),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error?.message || "API request failed");
+    throw new Error(error.error || "API request failed");
   }
 
   const data = await response.json();
-  return data.content[0].text;
+  return data.result;
 }
 
 async function generateExcelFile(testCases: TestCase[]): Promise<Blob> {
