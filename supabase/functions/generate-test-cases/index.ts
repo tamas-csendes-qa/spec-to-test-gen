@@ -27,7 +27,7 @@ function getSystemPrompt(tab: string, lang: string): string {
   }
 
   if (tab === "userstory") {
-    return `You are an expert software tester with BDD experience. Based on the provided specification, generate user story based test cases using Gherkin Given/When/Then syntax from a business perspective. Focus on user goals and business value, not technical implementation. ${langNote}`;
+    return `You are an expert software tester. Based on the provided user story, generate functional test cases with medium detail level. Each test case should have: a clear title, 3-6 test steps with expected results per step, and preconditions if needed. Focus on the user goal described in the story. Do not over-engineer — the input is a short user story, not a full specification. ${langNote}`;
   }
 
   return `You are an expert software tester. Generate comprehensive test cases based on the provided specification. ${langNote}`;

@@ -611,14 +611,9 @@ export function QAgen() {
           <div className="space-y-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-                {t.textInputLabel}
+                {t.fileLabel}
               </label>
-              <Textarea
-                value={userStoryText}
-                onChange={(e) => setUserStoryText(e.target.value)}
-                placeholder={t.userStoryPlaceholder}
-                className="min-h-[100px] resize-y font-mono text-sm"
-              />
+              <UploadZone />
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <div className="flex-1 border-t border-border" />
@@ -627,9 +622,14 @@ export function QAgen() {
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-                {t.fileLabel}
+                {t.textInputLabel}
               </label>
-              <UploadZone />
+              <Textarea
+                value={userStoryText}
+                onChange={(e) => setUserStoryText(e.target.value)}
+                placeholder={t.userStoryPlaceholder}
+                className="min-h-[100px] resize-y font-mono text-sm"
+              />
             </div>
           </div>
         ) : (
