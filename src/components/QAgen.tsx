@@ -216,14 +216,23 @@ function buildAzureCsv(cases: AzureTestCase[], areaPath: string): string {
   return rows.join("\n");
 }
 
-function triggerDownload(content: string | Blob, filename: string, mime: string) {
-  const blob = typeof content === "string" ? new Blob([content], { type: mime }) : content;
+function triggerDownloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function triggerDownloadText(content: string, filename: string, mime: string) {
+  triggerDownloadBlob(new Blob([content], { type: mime }), filename);
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function parseTabResult(
@@ -351,17 +360,15 @@ export function QAgen() {
 
   const downloadResult = async (tab: TabType) => {
     const state = tabStates[tab];
+    const date = todayStr();
 
-    if (state.format === "gherkin" && state.gherkinResult) {
-      triggerDownload(state.gherkinResult, "qagen-test-cases.txt", "text/plain;charset=utf-8");
-    } else if (state.format === "zephyr" && state.testCases) {
+    if (state.testCases) {
       const blob = await buildExcelBlob(state.testCases);
-      triggerDownload(blob, "qagen-test-cases.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    } else if (state.format === "azurecsv" && state.azureCases) {
-      triggerDownload(buildAzureCsv(state.azureCases, areaPath), "qagen-azure-devops.csv", "text/csv;charset=utf-8");
+      triggerDownloadBlob(blob, `qagen-zephyr-${date}.xlsx`);
+    } else if (state.azureCases) {
+      triggerDownloadText(buildAzureCsv(state.azureCases, areaPath), `qagen-azure-${date}.csv`, "text/csv;charset=utf-8");
     } else if (state.gherkinResult) {
-      // Fallback: raw text was stored for a non-gherkin format
-      triggerDownload(state.gherkinResult, "qagen-test-cases.txt", "text/plain;charset=utf-8");
+      triggerDownloadText(state.gherkinResult, `qagen-gherkin-${date}.txt`, "text/plain;charset=utf-8");
     }
   };
 
@@ -493,7 +500,7 @@ export function QAgen() {
     </div>
   );
 
-  const TabPanel = ({ tab }: { tab: TabType }) => {
+  const renderTabPanel = (tab: TabType) => {
     const state = tabStates[tab];
     const isActive = activeTab === tab;
     const isGenerating = loading && isActive;
@@ -585,7 +592,7 @@ export function QAgen() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => downloadResult(tab)}
+            onClick={() => { void downloadResult(tab); }}
             disabled={!resultReady}
             className="h-11 px-4 text-sm font-medium"
             title={t.download}
@@ -615,9 +622,9 @@ export function QAgen() {
               {t.result}
             </h2>
             {state.testCases ? (
-              <ZephyrPreview cases={state.testCases} onDownload={() => downloadResult(tab)} />
+              <ZephyrPreview cases={state.testCases} onDownload={() => { void downloadResult(tab); }} />
             ) : state.azureCases ? (
-              <AzurePreview cases={state.azureCases} onDownload={() => downloadResult(tab)} />
+              <AzurePreview cases={state.azureCases} onDownload={() => { void downloadResult(tab); }} />
             ) : state.gherkinResult ? (
               <GherkinPreview text={state.gherkinResult} />
             ) : null}
@@ -669,9 +676,9 @@ export function QAgen() {
             <TabsTrigger value="userstory">{t.userStory}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="quick"><TabPanel tab="quick" /></TabsContent>
-          <TabsContent value="keyword"><TabPanel tab="keyword" /></TabsContent>
-          <TabsContent value="userstory"><TabPanel tab="userstory" /></TabsContent>
+          <TabsContent value="quick">{renderTabPanel("quick")}</TabsContent>
+          <TabsContent value="keyword">{renderTabPanel("keyword")}</TabsContent>
+          <TabsContent value="userstory">{renderTabPanel("userstory")}</TabsContent>
         </Tabs>
 
         <footer className="mt-16 text-center text-xs text-muted-foreground">
