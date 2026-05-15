@@ -372,8 +372,7 @@ export function QAgen() {
   const hasResult = (state: TabState) =>
     !!(state.gherkinResult || state.testCases || state.keywordSteps || state.azureCases);
 
-  const generate = async () => {
-    const tab = activeTab;
+  const generate = async (tab: TabType) => {
     const state = tabStates[tab];
 
     let inputText: string | null = null;
@@ -676,7 +675,7 @@ export function QAgen() {
         {/* Action buttons */}
         <div className="flex gap-2">
           <Button
-            onClick={generate}
+            onClick={() => { void generate(tab); }}
             disabled={!canGenerate(tab) || isGenerating}
             className="flex-1 h-11 text-sm font-semibold"
           >
