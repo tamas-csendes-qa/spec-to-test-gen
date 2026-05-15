@@ -24,11 +24,14 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 
 ## Status
 
+## Status
+
 | Version | Status | Description |
 |---------|--------|-------------|
 | v0.1.0 | ✅ Done | UI, file upload, mock output |
-| v0.2.0 | ✅ Done | Claude API integration |
-| v0.3.0 | 🔄 In progress | Tab structure, role-based prompts |
+| v0.2.0 | ✅ Done | Claude API integration, Edge Function |
+| v0.3.0 | ✅ Done | Tab structure, role-based system prompts, downloads, Azure CSV |
+| v0.4.0 | ✅ Done | User Story textarea, default formats, tagline, bug fixes |
 
 ---
 
@@ -61,5 +64,6 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | Verzió | Státusz | Leírás |
 |--------|---------|--------|
 | v0.1.0 | ✅ Kész | Felület, fájlfeltöltés, mock kimenet |
-| v0.2.0 | ✅ Kész | Claude API integráció |
-| v0.3.0 | 🔄 Folyamatban | Tab struktúra, szerepkör alapú promptok |
+| v0.2.0 | ✅ Kész | Claude API integráció, Edge Function |
+| v0.3.0 | ✅ Kész | Tab struktúra, szerepkör alapú system promptok, letöltések, Azure CSV |
+| v0.4.0 | ✅ Kész | User Story szövegdoboz, alapértelmezett formátumok, szlogen, hibajavítások |
