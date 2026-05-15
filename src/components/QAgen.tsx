@@ -198,7 +198,10 @@ async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
 
-  return workbook.xlsx.writeBuffer() as Promise<Blob>;
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
 }
 
 function buildAzureCsv(cases: AzureTestCase[], areaPath: string): string {
