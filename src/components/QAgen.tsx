@@ -45,7 +45,7 @@ interface AzureTestCase {
 
 interface TabState {
   format: Format;
-  result: string | null;
+  gherkinResult: string | null;
   testCases: TestCase[] | null;
   azureCases: AzureTestCase[] | null;
 }
@@ -61,14 +61,12 @@ const STRINGS = {
     generating: "Generálás folyamatban…",
     result: "Eredmény",
     download: "Letöltés",
-    ready: "Készen áll a letöltésre",
     downloadFile: "Fájl letöltése",
     footer: "QAgen v0.4.0",
     toggleLang: "Nyelv váltása",
     toggleDark: "Sötét mód váltása",
     error: "Hiba",
     fileProcessingError: "Nem sikerült feldolgozni a fájlt",
-    apiError: "API hiba az AI válaszban",
     quickTest: "Gyors teszt",
     keyword: "Kulcsszavas",
     userStory: "Felhasználói igény",
@@ -78,6 +76,11 @@ const STRINGS = {
     orSeparator: "vagy",
     textInputLabel: "Felhasználói igény szövege",
     fileLabel: "Fájl feltöltése",
+    preconditions: "Előfeltételek",
+    steps: "Lépések",
+    expectedResult: "Elvárt eredmény",
+    priority: "Prioritás",
+    noResult: "Nincs eredmény még",
   },
   en: {
     subtitle: "From specification to test cases – in seconds",
@@ -89,14 +92,12 @@ const STRINGS = {
     generating: "Generating…",
     result: "Result",
     download: "Download",
-    ready: "Ready to download",
     downloadFile: "Download file",
     footer: "QAgen v0.4.0",
     toggleLang: "Switch language",
     toggleDark: "Toggle dark mode",
     error: "Error",
     fileProcessingError: "Failed to process file",
-    apiError: "Error from AI response",
     quickTest: "Quick Test",
     keyword: "Keyword",
     userStory: "User Story",
@@ -106,6 +107,11 @@ const STRINGS = {
     orSeparator: "or",
     textInputLabel: "User story text",
     fileLabel: "Upload file",
+    preconditions: "Preconditions",
+    steps: "Steps",
+    expectedResult: "Expected Result",
+    priority: "Priority",
+    noResult: "No result yet",
   },
 } as const;
 
@@ -132,16 +138,14 @@ async function extractTextFromFile(file: File): Promise<string> {
     let text = "";
     for (const sheet of workbook.SheetNames) {
       const ws = workbook.Sheets[sheet];
-      const csv = XLSX.utils.sheet_to_csv(ws);
-      text += `Sheet: ${sheet}\n${csv}\n`;
+      text += `Sheet: ${sheet}\n${XLSX.utils.sheet_to_csv(ws)}\n`;
     }
     return text;
   }
 
   if (filename.endsWith(".docx")) {
     const arrayBuffer = await file.arrayBuffer();
-    const decoder = new TextDecoder();
-    return decoder.decode(arrayBuffer);
+    return new TextDecoder().decode(arrayBuffer);
   }
 
   throw new Error("Unsupported file type");
@@ -156,9 +160,7 @@ async function callClaudeAPI(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !anonKey) {
-    throw new Error("Supabase configuration missing");
-  }
+  if (!supabaseUrl || !anonKey) throw new Error("Supabase configuration missing");
 
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-test-cases`, {
     method: "POST",
@@ -178,11 +180,11 @@ async function callClaudeAPI(
   return data.result;
 }
 
-async function generateExcelFile(testCases: TestCase[]): Promise<Blob> {
+async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet("Test Cases");
+  const ws = workbook.addWorksheet("Test Cases");
 
-  worksheet.columns = [
+  ws.columns = [
     { header: "Test Case ID", key: "id", width: 15 },
     { header: "Test Case Name", key: "name", width: 25 },
     { header: "Preconditions", key: "preconditions", width: 30 },
@@ -191,48 +193,31 @@ async function generateExcelFile(testCases: TestCase[]): Promise<Blob> {
     { header: "Priority", key: "priority", width: 12 },
   ];
 
-  testCases.forEach((tc) => worksheet.addRow(tc));
+  testCases.forEach((tc) => ws.addRow(tc));
 
-  worksheet.getRow(1).font = { bold: true };
-  worksheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFE7E6E6" },
-  };
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
 
   return workbook.xlsx.writeBuffer() as Promise<Blob>;
 }
 
-function generateAzureCsv(cases: AzureTestCase[], areaPath: string): string {
-  const rows: string[] = [
+function buildAzureCsv(cases: AzureTestCase[], areaPath: string): string {
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const rows = [
     "ID,Work Item Type,Title,Test Step,Step Action,Step Expected,Area Path,Assigned To,State",
   ];
-
-  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
-
   for (const tc of cases) {
     tc.steps.forEach((step, idx) => {
       rows.push(
-        [
-          "",
-          "Test Case",
-          escape(tc.title),
-          String(idx + 1),
-          escape(step.action),
-          escape(step.expected),
-          escape(areaPath),
-          "",
-          "Design",
-        ].join(",")
+        ["", "Test Case", esc(tc.title), String(idx + 1), esc(step.action), esc(step.expected), esc(areaPath), "", "Design"].join(",")
       );
     });
   }
-
   return rows.join("\n");
 }
 
-function downloadTextFile(content: string, filename: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
+function triggerDownload(content: string | Blob, filename: string, mime: string) {
+  const blob = typeof content === "string" ? new Blob([content], { type: mime }) : content;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -240,6 +225,44 @@ function downloadTextFile(content: string, filename: string, mimeType: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+function parseTabResult(
+  raw: string,
+  format: Format
+): Pick<TabState, "gherkinResult" | "testCases" | "azureCases"> {
+  if (format === "gherkin") {
+    return { gherkinResult: raw, testCases: null, azureCases: null };
+  }
+
+  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    return { gherkinResult: raw, testCases: null, azureCases: null };
+  }
+
+  try {
+    if (format === "zephyr") {
+      const cases: TestCase[] = JSON.parse(jsonMatch[0]);
+      return { gherkinResult: null, testCases: cases, azureCases: null };
+    }
+    if (format === "azurecsv") {
+      const cases: AzureTestCase[] = JSON.parse(jsonMatch[0]);
+      return { gherkinResult: null, testCases: null, azureCases: cases };
+    }
+  } catch {
+    return { gherkinResult: raw, testCases: null, azureCases: null };
+  }
+
+  return { gherkinResult: raw, testCases: null, azureCases: null };
+}
+
+const PRIORITY_COLORS: Record<string, string> = {
+  High: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+  Medium: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  Low: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+  Magas: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+  Közepes: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  Alacsony: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+};
 
 export function QAgen() {
   const [dark, setDark] = useState(false);
@@ -252,9 +275,9 @@ export function QAgen() {
   const [userStoryText, setUserStoryText] = useState("");
   const [areaPath, setAreaPath] = useState("");
   const [tabStates, setTabStates] = useState<Record<TabType, TabState>>({
-    quick: { format: "gherkin", result: null, testCases: null, azureCases: null },
-    keyword: { format: "gherkin", result: null, testCases: null, azureCases: null },
-    userstory: { format: "gherkin", result: null, testCases: null, azureCases: null },
+    quick: { format: "gherkin", gherkinResult: null, testCases: null, azureCases: null },
+    keyword: { format: "gherkin", gherkinResult: null, testCases: null, azureCases: null },
+    userstory: { format: "gherkin", gherkinResult: null, testCases: null, azureCases: null },
   });
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -274,13 +297,11 @@ export function QAgen() {
 
   const t = STRINGS[lang];
 
-  const updateTabState = (tab: TabType, updates: Partial<TabState>) => {
+  const updateTabState = (tab: TabType, updates: Partial<TabState>) =>
     setTabStates((prev) => ({ ...prev, [tab]: { ...prev[tab], ...updates } }));
-  };
 
   const onPick = (f: File | null) => {
-    if (!f) return;
-    if (!/\.(pdf|docx|xlsx)$/i.test(f.name)) return;
+    if (!f || !/\.(pdf|docx|xlsx)$/i.test(f.name)) return;
     setFile(f);
     setError(null);
   };
@@ -291,19 +312,26 @@ export function QAgen() {
     onPick(e.dataTransfer.files?.[0] ?? null);
   };
 
+  const canGenerate = (tab: TabType) =>
+    tab === "userstory" ? !!userStoryText.trim() || !!file : !!file;
+
+  const hasResult = (state: TabState) =>
+    !!(state.gherkinResult || state.testCases || state.azureCases);
+
   const generate = async () => {
     const tab = activeTab;
     const state = tabStates[tab];
 
-    // For userstory tab, text input takes priority over file
     let inputText: string | null = null;
     if (tab === "userstory" && userStoryText.trim()) {
       inputText = userStoryText.trim();
     } else if (file) {
-      inputText = await extractTextFromFile(file).catch((err) => {
+      try {
+        inputText = await extractTextFromFile(file);
+      } catch (err) {
         setError(err instanceof Error ? err.message : t.fileProcessingError);
-        return null;
-      });
+        return;
+      }
     }
 
     if (!inputText) return;
@@ -312,37 +340,8 @@ export function QAgen() {
     setError(null);
 
     try {
-      const response = await callClaudeAPI(inputText, state.format, lang, tab);
-
-      if (state.format === "gherkin") {
-        updateTabState(tab, { result: response, testCases: null, azureCases: null });
-      } else if (state.format === "zephyr") {
-        const jsonMatch = response.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          try {
-            const cases: TestCase[] = JSON.parse(jsonMatch[0]);
-            updateTabState(tab, { testCases: cases, result: "generated", azureCases: null });
-          } catch {
-            // JSON parse failed — show raw text
-            updateTabState(tab, { result: response, testCases: null, azureCases: null });
-          }
-        } else {
-          // No JSON array found — show raw text
-          updateTabState(tab, { result: response, testCases: null, azureCases: null });
-        }
-      } else if (state.format === "azurecsv") {
-        const jsonMatch = response.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          try {
-            const cases: AzureTestCase[] = JSON.parse(jsonMatch[0]);
-            updateTabState(tab, { azureCases: cases, result: "generated", testCases: null });
-          } catch {
-            updateTabState(tab, { result: response, azureCases: null, testCases: null });
-          }
-        } else {
-          updateTabState(tab, { result: response, azureCases: null, testCases: null });
-        }
-      }
+      const raw = await callClaudeAPI(inputText, state.format, lang, tab);
+      updateTabState(tab, parseTabResult(raw, state.format));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -350,31 +349,20 @@ export function QAgen() {
     }
   };
 
-  const canGenerate = (tab: TabType) => {
-    if (tab === "userstory" && userStoryText.trim()) return true;
-    return !!file;
-  };
+  const downloadResult = async (tab: TabType) => {
+    const state = tabStates[tab];
 
-  const handleDownloadXlsx = async (testCases: TestCase[]) => {
-    try {
-      const buffer = await generateExcelFile(testCases);
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "qagen-test-cases.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate Excel");
+    if (state.format === "gherkin" && state.gherkinResult) {
+      triggerDownload(state.gherkinResult, "qagen-test-cases.txt", "text/plain;charset=utf-8");
+    } else if (state.format === "zephyr" && state.testCases) {
+      const blob = await buildExcelBlob(state.testCases);
+      triggerDownload(blob, "qagen-test-cases.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    } else if (state.format === "azurecsv" && state.azureCases) {
+      triggerDownload(buildAzureCsv(state.azureCases, areaPath), "qagen-azure-devops.csv", "text/csv;charset=utf-8");
+    } else if (state.gherkinResult) {
+      // Fallback: raw text was stored for a non-gherkin format
+      triggerDownload(state.gherkinResult, "qagen-test-cases.txt", "text/plain;charset=utf-8");
     }
-  };
-
-  const handleDownloadAzureCsv = (cases: AzureTestCase[]) => {
-    const csv = generateAzureCsv(cases, areaPath);
-    downloadTextFile(csv, "qagen-azure-devops.csv", "text/csv;charset=utf-8;");
   };
 
   const UploadZone = () => (
@@ -387,20 +375,12 @@ export function QAgen() {
         dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
       }`}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        accept={ACCEPT}
-        className="hidden"
-        onChange={(e) => onPick(e.target.files?.[0] ?? null)}
-      />
+      <input ref={inputRef} type="file" accept={ACCEPT} className="hidden" onChange={(e) => onPick(e.target.files?.[0] ?? null)} />
       {file ? (
         <div className="flex flex-col items-center gap-2">
           <FileText className="h-8 w-8 text-primary" />
           <p className="font-mono text-sm">{file.name}</p>
-          <p className="text-xs text-muted-foreground">
-            {(file.size / 1024).toFixed(1)} KB · {t.pickAnother}
-          </p>
+          <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB · {t.pickAnother}</p>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-3">
@@ -416,9 +396,108 @@ export function QAgen() {
     </div>
   );
 
+  const GherkinPreview = ({ text }: { text: string }) => {
+    const lines = text.split("\n");
+    return (
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="max-h-[480px] overflow-y-auto p-5">
+          {lines.map((line, i) => {
+            const trimmed = line.trim();
+            const isKeyword = /^(Feature:|Scenario:|Scenario Outline:|Background:|Examples:|Funkció:|Forgatókönyv:)/i.test(trimmed);
+            const isStep = /^(Given|When|Then|And|But|Adott|Ha|Akkor|És|De)\s/i.test(trimmed);
+            const isComment = trimmed.startsWith("#");
+            const isTag = trimmed.startsWith("@");
+            return (
+              <div key={i} className={`font-mono text-sm leading-relaxed ${
+                isKeyword ? "text-primary font-semibold mt-3 first:mt-0" :
+                isStep ? "text-foreground pl-6" :
+                isComment ? "text-muted-foreground pl-6" :
+                isTag ? "text-amber-600 dark:text-amber-400" :
+                "text-muted-foreground"
+              }`}>
+                {line || <>&nbsp;</>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const ZephyrPreview = ({ cases, onDownload }: { cases: TestCase[]; onDownload: () => void }) => (
+    <div className="space-y-3">
+      {cases.map((tc, idx) => (
+        <div key={idx} className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs text-muted-foreground">{tc.id}</span>
+              <span className="font-semibold text-sm">{tc.name}</span>
+            </div>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded ${PRIORITY_COLORS[tc.priority] ?? "bg-muted text-muted-foreground"}`}>
+              {tc.priority}
+            </span>
+          </div>
+          <div className="px-4 py-3 space-y-2 text-sm">
+            {tc.preconditions && (
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.preconditions}: </span>
+                <span className="text-muted-foreground">{tc.preconditions}</span>
+              </div>
+            )}
+            {tc.steps && (
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.steps}: </span>
+                <span>{tc.steps}</span>
+              </div>
+            )}
+            {tc.expectedResult && (
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.expectedResult}: </span>
+                <span className="text-green-700 dark:text-green-400">{tc.expectedResult}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      <Button onClick={onDownload} className="w-full mt-1" size="sm">
+        <Download className="h-4 w-4" />
+        {t.downloadFile}
+      </Button>
+    </div>
+  );
+
+  const AzurePreview = ({ cases, onDownload }: { cases: AzureTestCase[]; onDownload: () => void }) => (
+    <div className="space-y-3">
+      {cases.map((tc, tcIdx) => (
+        <div key={tcIdx} className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border bg-muted/30">
+            <span className="font-semibold text-sm">{tc.title}</span>
+          </div>
+          <div className="divide-y divide-border">
+            {tc.steps.map((step, sIdx) => (
+              <div key={sIdx} className="flex gap-3 px-4 py-2.5 text-sm">
+                <span className="font-mono text-xs text-muted-foreground w-5 shrink-0 mt-0.5">{sIdx + 1}.</span>
+                <div className="flex-1 space-y-0.5">
+                  <p>{step.action}</p>
+                  <p className="text-green-700 dark:text-green-400 text-xs">{step.expected}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <Button onClick={onDownload} className="w-full mt-1" size="sm">
+        <Download className="h-4 w-4" />
+        {t.downloadFile}
+      </Button>
+    </div>
+  );
+
   const TabPanel = ({ tab }: { tab: TabType }) => {
     const state = tabStates[tab];
     const isActive = activeTab === tab;
+    const isGenerating = loading && isActive;
+    const resultReady = hasResult(state);
 
     return (
       <div className="space-y-5">
@@ -459,7 +538,7 @@ export function QAgen() {
           </label>
           <Select
             value={state.format}
-            onValueChange={(v) => updateTabState(tab, { format: v as Format })}
+            onValueChange={(v) => updateTabState(tab, { format: v as Format, gherkinResult: null, testCases: null, azureCases: null })}
           >
             <SelectTrigger>
               <SelectValue />
@@ -472,7 +551,7 @@ export function QAgen() {
           </Select>
         </div>
 
-        {/* Area Path (only for Azure CSV) */}
+        {/* Area Path (Azure CSV only) */}
         {state.format === "azurecsv" && (
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
@@ -488,27 +567,39 @@ export function QAgen() {
           </div>
         )}
 
-        {/* Generate button */}
-        <Button
-          onClick={generate}
-          disabled={!canGenerate(tab) || (loading && isActive)}
-          className="w-full h-11 text-sm font-semibold"
-        >
-          {loading && isActive ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {t.generating}
-            </>
-          ) : (
-            t.generate
-          )}
-        </Button>
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          <Button
+            onClick={generate}
+            disabled={!canGenerate(tab) || isGenerating}
+            className="flex-1 h-11 text-sm font-semibold"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t.generating}
+              </>
+            ) : (
+              t.generate
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => downloadResult(tab)}
+            disabled={!resultReady}
+            className="h-11 px-4 text-sm font-medium"
+            title={t.download}
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline ml-1">{t.download}</span>
+          </Button>
+        </div>
 
         {/* Error */}
         {error && isActive && (
           <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-4">
             <div className="flex gap-3">
-              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold text-red-900 dark:text-red-200 text-sm">{t.error}</p>
                 <p className="text-xs text-red-800 dark:text-red-300 mt-1">{error}</p>
@@ -518,107 +609,18 @@ export function QAgen() {
         )}
 
         {/* Result */}
-        {state.result && (
+        {resultReady && (
           <div className="animate-fade-in">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t.result}
-              </h2>
-              {state.format === "zephyr" && state.testCases && (
-                <Button variant="outline" size="sm" onClick={() => handleDownloadXlsx(state.testCases!)}>
-                  <Download className="h-3 w-3" />
-                  {t.download}
-                </Button>
-              )}
-              {state.format === "azurecsv" && state.azureCases && (
-                <Button variant="outline" size="sm" onClick={() => handleDownloadAzureCsv(state.azureCases!)}>
-                  <Download className="h-3 w-3" />
-                  {t.download}
-                </Button>
-              )}
-            </div>
-
-            {state.format === "zephyr" && state.testCases ? (
-              <div className="rounded-lg border border-border bg-card overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/50">
-                        {["ID", "Name", "Preconditions", "Steps", "Expected", "Priority"].map((h) => (
-                          <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {state.testCases.map((tc, idx) => (
-                        <tr key={idx} className="border-b border-border hover:bg-accent/30 transition-colors">
-                          <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{tc.id}</td>
-                          <td className="px-3 py-2 text-xs font-medium">{tc.name}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{tc.preconditions}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{tc.steps}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{tc.expectedResult}</td>
-                          <td className="px-3 py-2">
-                            <span className="inline-block rounded px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary">
-                              {tc.priority}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="p-3 border-t border-border">
-                  <Button onClick={() => handleDownloadXlsx(state.testCases!)} className="w-full" size="sm">
-                    <Download className="h-4 w-4" />
-                    {t.downloadFile}
-                  </Button>
-                </div>
-              </div>
-            ) : state.format === "azurecsv" && state.azureCases ? (
-              <div className="rounded-lg border border-border bg-card overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/50">
-                        {["Title", "Step", "Action", "Expected"].map((h) => (
-                          <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {state.azureCases.flatMap((tc, tcIdx) =>
-                        tc.steps.map((step, stepIdx) => (
-                          <tr key={`${tcIdx}-${stepIdx}`} className="border-b border-border hover:bg-accent/30 transition-colors">
-                            {stepIdx === 0 ? (
-                              <td className="px-3 py-2 text-xs font-medium align-top" rowSpan={tc.steps.length}>
-                                {tc.title}
-                              </td>
-                            ) : null}
-                            <td className="px-3 py-2 text-xs font-mono text-center">{stepIdx + 1}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground">{step.action}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground">{step.expected}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="p-3 border-t border-border">
-                  <Button onClick={() => handleDownloadAzureCsv(state.azureCases!)} className="w-full" size="sm">
-                    <Download className="h-4 w-4" />
-                    {t.downloadFile}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <pre className="max-h-[480px] overflow-auto rounded-lg border border-border bg-card p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap">
-                {state.result}
-              </pre>
-            )}
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              {t.result}
+            </h2>
+            {state.testCases ? (
+              <ZephyrPreview cases={state.testCases} onDownload={() => downloadResult(tab)} />
+            ) : state.azureCases ? (
+              <AzurePreview cases={state.azureCases} onDownload={() => downloadResult(tab)} />
+            ) : state.gherkinResult ? (
+              <GherkinPreview text={state.gherkinResult} />
+            ) : null}
           </div>
         )}
       </div>
@@ -657,22 +659,19 @@ export function QAgen() {
         </header>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabType); setError(null); }}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => { setActiveTab(v as TabType); setError(null); }}
+        >
           <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="quick">{t.quickTest}</TabsTrigger>
             <TabsTrigger value="keyword">{t.keyword}</TabsTrigger>
             <TabsTrigger value="userstory">{t.userStory}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="quick">
-            <TabPanel tab="quick" />
-          </TabsContent>
-          <TabsContent value="keyword">
-            <TabPanel tab="keyword" />
-          </TabsContent>
-          <TabsContent value="userstory">
-            <TabPanel tab="userstory" />
-          </TabsContent>
+          <TabsContent value="quick"><TabPanel tab="quick" /></TabsContent>
+          <TabsContent value="keyword"><TabPanel tab="keyword" /></TabsContent>
+          <TabsContent value="userstory"><TabPanel tab="userstory" /></TabsContent>
         </Tabs>
 
         <footer className="mt-16 text-center text-xs text-muted-foreground">
