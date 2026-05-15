@@ -33,7 +33,7 @@ function getSystemPrompt(tab: string, lang: string): string {
   return `You are an expert software tester. Generate comprehensive test cases based on the provided specification. ${langNote}`;
 }
 
-function getUserMessage(format: string, text: string): string {
+function getUserMessage(format: string, text: string, tab: string): string {
   if (format === "gherkin") {
     return `Specification:\n\n${text}\n\nGenerate Gherkin test cases (Feature and Scenarios) based on this specification.`;
   }
@@ -93,7 +93,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const systemPrompt = getSystemPrompt(tab, lang);
-    const userMessage = getUserMessage(format, text);
+    const userMessage = getUserMessage(format, text, tab);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
