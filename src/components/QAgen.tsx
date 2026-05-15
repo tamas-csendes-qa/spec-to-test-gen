@@ -63,7 +63,7 @@ interface TabState {
 
 const STRINGS = {
   hu: {
-    subtitle: "Specifikációból tesztesetek – másodpercek alatt",
+    subtitle: "A specifikáció értelmezése a mi dolgunk.",
     dropHere: "Húzd ide a specifikációt",
     dropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 30 oldal",
     pickAnother: "kattints másik fájl kiválasztásához",
@@ -94,7 +94,7 @@ const STRINGS = {
     noResult: "Nincs eredmény még",
   },
   en: {
-    subtitle: "From specification to test cases – in seconds",
+    subtitle: "Specification analysis is our business.",
     dropHere: "Drop the specification here",
     dropHint: "or click to browse · PDF, DOCX, XLSX · max 30 pages",
     pickAnother: "click to pick another file",
