@@ -23,7 +23,7 @@ function getSystemPrompt(tab: string, lang: string): string {
   }
 
   if (tab === "keyword") {
-    return `You are an expert software tester specializing in test automation. Based on the provided specification, generate detailed keyword-driven test cases with multiple steps. Each test case must include: Test Case ID, Title, Preconditions, numbered Step Actions with exact UI element names (buttons, fields, menu items), and Expected Results for each step. The test cases must be detailed enough for a test automation engineer unfamiliar with the application to automate them. ${langNote}`;
+    return `You are an expert software tester specializing in test automation. Based on the provided specification, generate detailed keyword-driven test cases. Return a JSON array where each object represents ONE SINGLE TEST STEP (not a test case). Each step must be atomic and automatable. Use exact UI element names (buttons, fields, menu items). The same test case ID and name repeat for every step belonging to that test case. ${langNote}`;
   }
 
   if (tab === "userstory") {
@@ -39,6 +39,9 @@ function getUserMessage(format: string, text: string): string {
   }
 
   if (format === "zephyr") {
+    if (tab === "keyword") {
+      return `Specification:\n\n${text}\n\nGenerate keyword-driven test cases as a JSON array where EACH OBJECT IS ONE SINGLE TEST STEP. Structure:\n[\n  {\n    "id": "TC-001",\n    "name": "Test case title",\n    "preconditions": "Any preconditions for this test case",\n    "stepNumber": 1,\n    "stepAction": "Single atomic action, e.g. Click the Login button",\n    "expectedResult": "Expected result for this specific step",\n    "priority": "High"\n  },\n  {\n    "id": "TC-001",\n    "name": "Test case title",\n    "preconditions": "Any preconditions for this test case",\n    "stepNumber": 2,\n    "stepAction": "Next single atomic action",\n    "expectedResult": "Expected result for step 2",\n    "priority": "High"\n  }\n]\nSame id and name repeat for every step of the same test case. Each stepAction must be a single atomic action. Return ONLY valid JSON — no markdown, no code fences, no extra text.`;
+    }
     return `Specification:\n\n${text}\n\nGenerate test cases as a JSON array. Each test case object must have exactly these fields: id (e.g., "TC-001"), name, preconditions, steps (a single string summarizing all steps), expectedResult, and priority ("High", "Medium", or "Low"). Return ONLY valid JSON — no markdown, no code fences, no extra text.`;
   }
 

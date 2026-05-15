@@ -38,6 +38,16 @@ interface TestCase {
   priority: string;
 }
 
+interface KeywordStep {
+  id: string;
+  name: string;
+  preconditions: string;
+  stepNumber: number;
+  stepAction: string;
+  expectedResult: string;
+  priority: string;
+}
+
 interface AzureTestCase {
   title: string;
   steps: { action: string; expected: string }[];
@@ -47,6 +57,7 @@ interface TabState {
   format: Format;
   gherkinResult: string | null;
   testCases: TestCase[] | null;
+  keywordSteps: KeywordStep[] | null;
   azureCases: AzureTestCase[] | null;
 }
 
@@ -204,6 +215,31 @@ async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
   });
 }
 
+async function buildKeywordExcelBlob(steps: KeywordStep[]): Promise<Blob> {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet("Test Cases");
+
+  ws.columns = [
+    { header: "Test Case ID", key: "id", width: 13 },
+    { header: "Test Case Name", key: "name", width: 28 },
+    { header: "Preconditions", key: "preconditions", width: 28 },
+    { header: "Step Number", key: "stepNumber", width: 12 },
+    { header: "Step Action", key: "stepAction", width: 45 },
+    { header: "Expected Result", key: "expectedResult", width: 35 },
+    { header: "Priority", key: "priority", width: 12 },
+  ];
+
+  steps.forEach((s) => ws.addRow(s));
+
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
 function buildAzureCsv(cases: AzureTestCase[], areaPath: string): string {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const rows = [
@@ -241,30 +277,36 @@ function todayStr() {
 function parseTabResult(
   raw: string,
   format: Format
-): Pick<TabState, "gherkinResult" | "testCases" | "azureCases"> {
+): Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases"> {
   if (format === "gherkin") {
-    return { gherkinResult: raw, testCases: null, azureCases: null };
+    return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
   }
 
   const jsonMatch = raw.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
-    return { gherkinResult: raw, testCases: null, azureCases: null };
+    return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
   }
 
   try {
     if (format === "zephyr") {
-      const cases: TestCase[] = JSON.parse(jsonMatch[0]);
-      return { gherkinResult: null, testCases: cases, azureCases: null };
+      const parsed = JSON.parse(jsonMatch[0]);
+      // keyword tab produces per-step rows (have stepNumber/stepAction)
+      if (parsed.length > 0 && "stepAction" in parsed[0]) {
+        const steps: KeywordStep[] = parsed;
+        return { gherkinResult: null, testCases: null, keywordSteps: steps, azureCases: null };
+      }
+      const cases: TestCase[] = parsed;
+      return { gherkinResult: null, testCases: cases, keywordSteps: null, azureCases: null };
     }
     if (format === "azurecsv") {
       const cases: AzureTestCase[] = JSON.parse(jsonMatch[0]);
-      return { gherkinResult: null, testCases: null, azureCases: cases };
+      return { gherkinResult: null, testCases: null, keywordSteps: null, azureCases: cases };
     }
   } catch {
-    return { gherkinResult: raw, testCases: null, azureCases: null };
+    return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
   }
 
-  return { gherkinResult: raw, testCases: null, azureCases: null };
+  return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -287,9 +329,9 @@ export function QAgen() {
   const [userStoryText, setUserStoryText] = useState("");
   const [areaPath, setAreaPath] = useState("");
   const [tabStates, setTabStates] = useState<Record<TabType, TabState>>({
-    quick: { format: "gherkin", gherkinResult: null, testCases: null, azureCases: null },
-    keyword: { format: "gherkin", gherkinResult: null, testCases: null, azureCases: null },
-    userstory: { format: "gherkin", gherkinResult: null, testCases: null, azureCases: null },
+    quick: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
+    keyword: { format: "zephyr", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
+    userstory: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
   });
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -328,7 +370,7 @@ export function QAgen() {
     tab === "userstory" ? !!userStoryText.trim() || !!file : !!file;
 
   const hasResult = (state: TabState) =>
-    !!(state.gherkinResult || state.testCases || state.azureCases);
+    !!(state.gherkinResult || state.testCases || state.keywordSteps || state.azureCases);
 
   const generate = async () => {
     const tab = activeTab;
@@ -365,7 +407,10 @@ export function QAgen() {
     const state = tabStates[tab];
     const date = todayStr();
 
-    if (state.testCases) {
+    if (state.keywordSteps) {
+      const blob = await buildKeywordExcelBlob(state.keywordSteps);
+      triggerDownloadBlob(blob, `qagen-keyword-${date}.xlsx`);
+    } else if (state.testCases) {
       const blob = await buildExcelBlob(state.testCases);
       triggerDownloadBlob(blob, `qagen-zephyr-${date}.xlsx`);
     } else if (state.azureCases) {
@@ -430,6 +475,57 @@ export function QAgen() {
             );
           })}
         </div>
+      </div>
+    );
+  };
+
+  const KeywordPreview = ({ steps, onDownload }: { steps: KeywordStep[]; onDownload: () => void }) => {
+    // Group steps by test case id
+    const groups: { id: string; name: string; priority: string; steps: KeywordStep[] }[] = [];
+    for (const s of steps) {
+      const existing = groups.find((g) => g.id === s.id);
+      if (existing) {
+        existing.steps.push(s);
+      } else {
+        groups.push({ id: s.id, name: s.name, priority: s.priority, steps: [s] });
+      }
+    }
+    return (
+      <div className="space-y-3">
+        {groups.map((group, gIdx) => (
+          <div key={gIdx} className="rounded-lg border border-border bg-card overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-muted-foreground">{group.id}</span>
+                <span className="font-semibold text-sm">{group.name}</span>
+              </div>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded ${PRIORITY_COLORS[group.priority] ?? "bg-muted text-muted-foreground"}`}>
+                {group.priority}
+              </span>
+            </div>
+            {group.steps[0]?.preconditions && (
+              <div className="px-4 py-2 border-b border-border bg-muted/10 text-xs text-muted-foreground">
+                <span className="font-semibold uppercase tracking-wider">{t.preconditions}: </span>
+                {group.steps[0].preconditions}
+              </div>
+            )}
+            <div className="divide-y divide-border">
+              {group.steps.map((step, sIdx) => (
+                <div key={sIdx} className="flex gap-3 px-4 py-2.5 text-sm">
+                  <span className="font-mono text-xs text-muted-foreground w-5 shrink-0 mt-0.5">{step.stepNumber}.</span>
+                  <div className="flex-1 space-y-0.5">
+                    <p>{step.stepAction}</p>
+                    <p className="text-green-700 dark:text-green-400 text-xs">{step.expectedResult}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <Button onClick={onDownload} className="w-full mt-1" size="sm">
+          <Download className="h-4 w-4" />
+          {t.downloadFile}
+        </Button>
       </div>
     );
   };
@@ -548,7 +644,7 @@ export function QAgen() {
           </label>
           <Select
             value={state.format}
-            onValueChange={(v) => updateTabState(tab, { format: v as Format, gherkinResult: null, testCases: null, azureCases: null })}
+            onValueChange={(v) => updateTabState(tab, { format: v as Format, gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null })}
           >
             <SelectTrigger>
               <SelectValue />
@@ -624,7 +720,9 @@ export function QAgen() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               {t.result}
             </h2>
-            {state.testCases ? (
+            {state.keywordSteps ? (
+              <KeywordPreview steps={state.keywordSteps} onDownload={() => { void downloadResult(tab); }} />
+            ) : state.testCases ? (
               <ZephyrPreview cases={state.testCases} onDownload={() => { void downloadResult(tab); }} />
             ) : state.azureCases ? (
               <AzurePreview cases={state.azureCases} onDownload={() => { void downloadResult(tab); }} />
