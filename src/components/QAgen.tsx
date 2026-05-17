@@ -744,7 +744,7 @@ export function QAgen() {
                 ? "/ChatGPT_Image_2026._maj._17._19_37_02.png"
                 : "/ChatGPT_Image_2026._maj._17._19_35_33.png"}
               alt="QAgen"
-              style={{ height: 40, width: "auto" }}
+              style={{ height: 120, width: "auto" }}
             />
           </div>
           <div className="flex items-center gap-3">
