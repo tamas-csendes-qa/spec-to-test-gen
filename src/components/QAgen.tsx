@@ -6,7 +6,6 @@ import {
   FileText,
   Download,
   Loader as Loader2,
-  Sparkles,
   CircleAlert as AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -739,14 +738,16 @@ export function QAgen() {
       <div className="mx-auto max-w-3xl px-6 py-8 animate-fade-in">
         {/* Header */}
         <header className="flex items-center justify-between gap-4 mb-10">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">QAgen</h1>
+          <div className="flex items-center">
+            <img
+              src={dark
+                ? "/ChatGPT_Image_2026._maj._17._19_37_02.png"
+                : "/ChatGPT_Image_2026._maj._17._19_35_33.png"}
+              alt="QAgen"
+              style={{ height: 40, width: "auto" }}
+            />
           </div>
           <div className="flex items-center gap-3">
-            <p className="hidden sm:block text-sm text-muted-foreground">{t.subtitle}</p>
             <button
               onClick={() => setLang((l) => (l === "hu" ? "en" : "hu"))}
               aria-label={t.toggleLang}
