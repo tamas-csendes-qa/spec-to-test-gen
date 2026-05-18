@@ -10,6 +10,7 @@ import {
   CircleAlert as AlertCircle,
   Settings,
   LogOut,
+  X,
 } from "lucide-react";
 import { logUsage, touchSessionByToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -67,9 +68,13 @@ interface TabState {
 const STRINGS = {
   hu: {
     subtitle: "A specifikáció értelmezése a mi dolgunk.",
+    specLabel: "Specifikáció",
     dropHere: "Húzd ide a specifikációt",
     dropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 30 oldal",
     pickAnother: "kattints másik fájl kiválasztásához",
+    secondaryLabel: "Kiegészítő dokumentum (opcionális)",
+    secondaryDropHere: "Húzd ide a kiegészítő dokumentumot",
+    secondaryDropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX",
     formatLabel: "Kimeneti formátum",
     generate: "Tesztesetek generálása",
     generating: "Generálás folyamatban…",
@@ -98,9 +103,13 @@ const STRINGS = {
   },
   en: {
     subtitle: "Specification analysis is our business.",
+    specLabel: "Specification",
     dropHere: "Drop the specification here",
     dropHint: "or click to browse · PDF, DOCX, XLSX · max 30 pages",
     pickAnother: "click to pick another file",
+    secondaryLabel: "Additional document (optional)",
+    secondaryDropHere: "Drop the additional document here",
+    secondaryDropHint: "or click to browse · PDF, DOCX, XLSX",
     formatLabel: "Output format",
     generate: "Generate test cases",
     generating: "Generating…",
@@ -169,7 +178,8 @@ async function callClaudeAPI(
   text: string,
   format: Format,
   lang: Lang,
-  tab: TabType
+  tab: TabType,
+  secondaryText?: string
 ): Promise<{ result: string; token_count: number }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -182,7 +192,7 @@ async function callClaudeAPI(
       "Content-Type": "application/json",
       Authorization: `Bearer ${anonKey}`,
     },
-    body: JSON.stringify({ text, format, lang, tab }),
+    body: JSON.stringify({ text, format, lang, tab, secondaryText }),
   });
 
   if (!response.ok) {
@@ -293,7 +303,6 @@ function parseTabResult(
   try {
     if (format === "zephyr") {
       const parsed = JSON.parse(jsonMatch[0]);
-      // keyword tab produces per-step rows (have stepNumber/stepAction)
       if (parsed.length > 0 && "stepAction" in parsed[0]) {
         const steps: KeywordStep[] = parsed;
         return { gherkinResult: null, testCases: null, keywordSteps: steps, azureCases: null };
@@ -342,10 +351,12 @@ export function QAgen({
 }: QAgenProps = {}) {
   const [dark, setDark] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [secondaryFile, setSecondaryFile] = useState<File | null>(null);
   const [lang, setLang] = useState<Lang>("hu");
   const [activeTab, setActiveTab] = useState<TabType>("quick");
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [dragOverSecondary, setDragOverSecondary] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userStoryText, setUserStoryText] = useState("");
   const [areaPath, setAreaPath] = useState("");
@@ -355,6 +366,7 @@ export function QAgen({
     userstory: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
   });
   const inputRef = useRef<HTMLInputElement>(null);
+  const secondaryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -381,10 +393,22 @@ export function QAgen({
     setError(null);
   };
 
+  const onPickSecondary = (f: File | null) => {
+    if (!f || !/\.(pdf|docx|xlsx)$/i.test(f.name)) return;
+    setSecondaryFile(f);
+    setError(null);
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     onPick(e.dataTransfer.files?.[0] ?? null);
+  };
+
+  const onDropSecondary = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverSecondary(false);
+    onPickSecondary(e.dataTransfer.files?.[0] ?? null);
   };
 
   const canGenerate = (tab: TabType) =>
@@ -410,14 +434,23 @@ export function QAgen({
 
     if (!inputText) return;
 
+    let secondaryText: string | undefined;
+    if (secondaryFile && tab !== "userstory") {
+      try {
+        secondaryText = await extractTextFromFile(secondaryFile);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t.fileProcessingError);
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab);
+      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText);
       updateTabState(tab, parseTabResult(raw, state.format));
 
-      // Log usage and touch session
       if (userId) {
         void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
         if (sessionToken) void touchSessionByToken(userId, sessionToken);
@@ -446,7 +479,7 @@ export function QAgen({
     }
   };
 
-  const UploadZone = () => (
+  const PrimaryUploadZone = () => (
     <div
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
@@ -472,6 +505,65 @@ export function QAgen({
             <p className="font-medium text-sm">{t.dropHere}</p>
             <p className="text-xs text-muted-foreground mt-1">{t.dropHint}</p>
           </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const SecondaryUploadZone = () => (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {t.secondaryLabel}
+        </label>
+        {secondaryFile && (
+          <button
+            type="button"
+            onClick={() => setSecondaryFile(null)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {secondaryFile ? (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
+          <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-mono text-sm truncate">{secondaryFile.name}</p>
+            <p className="text-xs text-muted-foreground">{(secondaryFile.size / 1024).toFixed(1)} KB</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSecondaryFile(null)}
+            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+            aria-label="Remove secondary document"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOverSecondary(true); }}
+          onDragLeave={() => setDragOverSecondary(false)}
+          onDrop={onDropSecondary}
+          onClick={() => secondaryInputRef.current?.click()}
+          className={`group cursor-pointer rounded-lg border border-dashed bg-card/30 px-4 py-4 text-center transition-all ${
+            dragOverSecondary ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+          }`}
+        >
+          <input
+            ref={secondaryInputRef}
+            type="file"
+            accept={ACCEPT}
+            className="hidden"
+            onChange={(e) => onPickSecondary(e.target.files?.[0] ?? null)}
+          />
+          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+            <Upload className="h-4 w-4 group-hover:text-primary transition-colors" />
+            <span className="text-sm">{t.secondaryDropHere}</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">{t.secondaryDropHint}</p>
         </div>
       )}
     </div>
@@ -506,7 +598,6 @@ export function QAgen({
   };
 
   const KeywordPreview = ({ steps, onDownload }: { steps: KeywordStep[]; onDownload: () => void }) => {
-    // Group steps by test case id
     const groups: { id: string; name: string; priority: string; steps: KeywordStep[] }[] = [];
     for (const s of steps) {
       const existing = groups.find((g) => g.id === s.id);
@@ -630,6 +721,7 @@ export function QAgen({
     const isActive = activeTab === tab;
     const isGenerating = loading && isActive;
     const resultReady = hasResult(state);
+    const showSecondary = tab === "quick" || tab === "keyword";
 
     return (
       <div className="space-y-5">
@@ -640,7 +732,7 @@ export function QAgen({
               <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
                 {t.fileLabel}
               </label>
-              <UploadZone />
+              <PrimaryUploadZone />
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <div className="flex-1 border-t border-border" />
@@ -660,7 +752,15 @@ export function QAgen({
             </div>
           </div>
         ) : (
-          <UploadZone />
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
+                {t.specLabel}
+              </label>
+              <PrimaryUploadZone />
+            </div>
+            {showSecondary && <SecondaryUploadZone />}
+          </div>
         )}
 
         {/* Format selector */}
