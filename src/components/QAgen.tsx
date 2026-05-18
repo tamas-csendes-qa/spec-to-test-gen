@@ -8,7 +8,10 @@ import {
   Loader as Loader2,
   Sparkles,
   CircleAlert as AlertCircle,
+  Settings,
+  LogOut,
 } from "lucide-react";
+import { logUsage, touchSessionByToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -167,7 +170,7 @@ async function callClaudeAPI(
   format: Format,
   lang: Lang,
   tab: TabType
-): Promise<string> {
+): Promise<{ result: string; token_count: number }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -188,7 +191,7 @@ async function callClaudeAPI(
   }
 
   const data = await response.json();
-  return data.result;
+  return { result: data.result, token_count: data.token_count ?? 0 };
 }
 
 async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
@@ -318,7 +321,25 @@ const PRIORITY_COLORS: Record<string, string> = {
   Alacsony: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
 };
 
-export function QAgen() {
+interface QAgenProps {
+  userId?: string;
+  companyId?: string | null;
+  sessionToken?: string | null;
+  isAdmin?: boolean;
+  userEmail?: string;
+  onAdminClick?: () => void;
+  onSignOut?: () => void;
+}
+
+export function QAgen({
+  userId,
+  companyId,
+  sessionToken,
+  isAdmin,
+  userEmail,
+  onAdminClick,
+  onSignOut,
+}: QAgenProps = {}) {
   const [dark, setDark] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [lang, setLang] = useState<Lang>("hu");
@@ -393,8 +414,14 @@ export function QAgen() {
     setError(null);
 
     try {
-      const raw = await callClaudeAPI(inputText, state.format, lang, tab);
+      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab);
       updateTabState(tab, parseTabResult(raw, state.format));
+
+      // Log usage and touch session
+      if (userId) {
+        void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
+        if (sessionToken) void touchSessionByToken(userId, sessionToken);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -747,6 +774,21 @@ export function QAgen() {
           </div>
           <div className="flex items-center gap-3">
             <p className="hidden sm:block text-sm text-muted-foreground">{t.subtitle}</p>
+            {isAdmin && onAdminClick && (
+              <button
+                onClick={onAdminClick}
+                title="Admin panel"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <Settings className="h-4 w-4" />
+                <span className="hidden sm:inline">Admin</span>
+              </button>
+            )}
+            {userEmail && (
+              <span className="hidden md:block text-xs text-muted-foreground max-w-[140px] truncate" title={userEmail}>
+                {userEmail}
+              </span>
+            )}
             <button
               onClick={() => setLang((l) => (l === "hu" ? "en" : "hu"))}
               aria-label={t.toggleLang}
@@ -762,6 +804,15 @@ export function QAgen() {
             >
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
+            {onSignOut && (
+              <button
+                onClick={() => { void onSignOut?.(); }}
+                title="Kijelentkezés"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </header>
 

@@ -120,9 +120,10 @@ Deno.serve(async (req: Request) => {
 
     const data = await response.json();
     const result = data.content[0].text;
+    const token_count = (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0);
 
     return new Response(
-      JSON.stringify({ result }),
+      JSON.stringify({ result, token_count }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
