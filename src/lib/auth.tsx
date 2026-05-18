@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 import type { UserProfile } from "./supabase";
 
 const SESSION_TOKEN_KEY = "qagen-session-token";
-const SESSION_ACTIVE_INTERVAL = 5 * 60 * 1000; // update last_active every 5 min
+const SESSION_ACTIVE_INTERVAL = 5 * 60 * 1000;
 
 type AuthContextValue = {
   user: User | null;
@@ -31,12 +31,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
-    const { data } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", uid)
-      .maybeSingle();
-    return data as UserProfile | null;
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", uid)
+        .maybeSingle();
+      if (error) {
+        console.error("[Auth] fetchProfile error:", error);
+        return null;
+      }
+      return data as UserProfile | null;
+    } catch (err) {
+      console.error("[Auth] fetchProfile threw:", err);
+      return null;
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -49,7 +58,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let token = sessionStorage.getItem(SESSION_TOKEN_KEY);
 
     if (token) {
-      // Verify this token still exists in DB
       const { data } = await supabase
         .from("sessions")
         .select("id")
@@ -61,40 +69,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!token) {
       token = generateToken();
-      await supabase.from("sessions").insert({ user_id: uid, session_token: token });
-      sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+      const { error } = await supabase
+        .from("sessions")
+        .insert({ user_id: uid, session_token: token });
+      if (error) {
+        console.error("[Auth] ensureSession insert error:", error);
+      } else {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+      }
     }
 
     return token;
   }, []);
 
   const enforceSessionLimit = useCallback(async (uid: string): Promise<void> => {
-    const profile = await fetchProfile(uid);
-    if (!profile) return;
+    try {
+      const prof = await fetchProfile(uid);
+      if (!prof) return;
 
-    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: activeSessions } = await supabase
+        .from("sessions")
+        .select("id, last_active, created_at")
+        .eq("user_id", uid)
+        .gte("last_active", thirtyMinAgo)
+        .order("last_active", { ascending: true });
 
-    // Count active sessions (last_active within 30 min)
-    const { data: activeSessions } = await supabase
-      .from("sessions")
-      .select("id, last_active, created_at")
-      .eq("user_id", uid)
-      .gte("last_active", thirtyMinAgo)
-      .order("last_active", { ascending: true });
+      const active = activeSessions ?? [];
+      const limit = prof.max_concurrent_sessions;
 
-    const active = activeSessions ?? [];
-    const limit = profile.max_concurrent_sessions;
-
-    // If at or over limit, delete the oldest until we're under
-    if (active.length >= limit) {
-      const toDelete = active.slice(0, active.length - limit + 1);
-      for (const s of toDelete) {
-        await supabase.from("sessions").delete().eq("id", s.id);
+      if (active.length >= limit) {
+        const toDelete = active.slice(0, active.length - limit + 1);
+        for (const s of toDelete) {
+          await supabase.from("sessions").delete().eq("id", s.id);
+        }
       }
+    } catch (err) {
+      console.error("[Auth] enforceSessionLimit error:", err);
     }
   }, [fetchProfile]);
 
-  // Update last_active periodically
   const touchSession = useCallback(async (uid: string, token: string) => {
     await supabase
       .from("sessions")
@@ -104,44 +118,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Bootstrap from existing Supabase auth session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      (async () => {
-        if (session?.user) {
-          setUser(session.user);
-          const p = await fetchProfile(session.user.id);
+    let mounted = true;
+
+    // Bootstrap: check for existing session
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      console.log("[Auth] getSession:", session?.user?.email ?? "no session", error ?? "");
+      if (!mounted) return;
+
+      if (session?.user) {
+        setUser(session.user);
+        fetchProfile(session.user.id).then((p) => {
+          if (!mounted) return;
           setProfile(p);
-          const token = await ensureSession(session.user.id);
-          setSessionToken(token);
-        }
+          ensureSession(session.user.id).then((token) => {
+            if (!mounted) return;
+            setSessionToken(token);
+            setLoading(false);
+          }).catch(() => setLoading(false));
+        }).catch(() => {
+          if (mounted) setLoading(false);
+        });
+      } else {
         setLoading(false);
-      })();
+      }
+    }).catch((err) => {
+      console.error("[Auth] getSession error:", err);
+      if (mounted) setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      (async () => {
-        if (session?.user) {
-          setUser(session.user);
-          const p = await fetchProfile(session.user.id);
-          setProfile(p);
-          if (event === "SIGNED_IN") {
+      console.log("[Auth] onAuthStateChange event:", event, "user:", session?.user?.email ?? "none");
+
+      if (!session?.user) {
+        setUser(null);
+        setProfile(null);
+        setSessionToken(null);
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+        setLoading(false);
+        return;
+      }
+
+      // Only act on SIGNED_IN; INITIAL_SESSION is handled by getSession above
+      if (event === "SIGNED_IN") {
+        setUser(session.user);
+        (async () => {
+          try {
+            const p = await fetchProfile(session.user.id);
+            setProfile(p);
             await enforceSessionLimit(session.user.id);
             const token = await ensureSession(session.user.id);
             setSessionToken(token);
+          } catch (err) {
+            console.error("[Auth] SIGNED_IN handler error:", err);
+          } finally {
+            setLoading(false);
           }
-        } else {
-          setUser(null);
-          setProfile(null);
-          setSessionToken(null);
-          sessionStorage.removeItem(SESSION_TOKEN_KEY);
-        }
-      })();
+        })();
+      }
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, [fetchProfile, ensureSession, enforceSessionLimit]);
 
-  // Touch session every 5 minutes
+  // Heartbeat: touch session every 5 minutes
   useEffect(() => {
     if (!user || !sessionToken) return;
     const interval = setInterval(() => {
@@ -151,9 +193,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, sessionToken, touchSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    return { error: null };
+    console.log("[Auth] signIn called for:", email);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      console.log("[Auth] signInWithPassword response — user:", data?.user?.id ?? "none", "error:", error?.message ?? "none");
+      if (error) return { error: error.message };
+      return { error: null };
+    } catch (err) {
+      console.error("[Auth] signIn threw:", err);
+      return { error: "Bejelentkezési hiba. Kérjük próbálja újra." };
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -188,13 +237,14 @@ export async function logUsage(params: {
   outputFormat: string;
   tokenCount: number;
 }) {
-  await supabase.from("usage_logs").insert({
+  const { error } = await supabase.from("usage_logs").insert({
     user_id: params.userId,
     company_id: params.companyId,
     tab_type: params.tabType,
     output_format: params.outputFormat,
     token_count: params.tokenCount,
   });
+  if (error) console.error("[Auth] logUsage error:", error);
 }
 
 export async function touchSessionByToken(userId: string, token: string) {

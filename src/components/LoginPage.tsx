@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles, Moon, Sun } from "lucide-react";
+import { Sparkles, Moon, Sun, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
@@ -9,23 +9,32 @@ interface LoginPageProps {
   onSuccess: () => void;
 }
 
-export function LoginPage({ dark, onToggleDark, onSuccess }: LoginPageProps) {
+export function LoginPage({ dark, onToggleDark }: LoginPageProps) {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("[LoginPage] Submit clicked, email:", email, "password length:", password.length);
     setError(null);
     setLoading(true);
-    const { error } = await signIn(email, password);
-    setLoading(false);
-    if (error) {
-      setError(error);
-    } else {
-      onSuccess();
+
+    try {
+      const result = await signIn(email, password);
+      console.log("[LoginPage] signIn result:", result);
+      if (result.error) {
+        setError(result.error);
+      }
+      // On success, auth state change in AuthProvider handles the redirect automatically
+    } catch (err) {
+      console.error("[LoginPage] Unexpected error:", err);
+      setError("Váratlan hiba történt. Kérjük próbálja újra.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -85,16 +94,26 @@ export function LoginPage({ dark, onToggleDark, onSuccess }: LoginPageProps) {
               >
                 Jelszó
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                placeholder="••••••••"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Jelszó elrejtése" : "Jelszó megjelenítése"}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             {error && (
