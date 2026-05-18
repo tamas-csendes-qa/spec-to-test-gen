@@ -75,6 +75,9 @@ const STRINGS = {
     secondaryLabel: "Kiegészítő dokumentum (opcionális)",
     secondaryDropHere: "Húzd ide a kiegészítő dokumentumot",
     secondaryDropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX",
+    existingTcLabel: "Meglévő tesztesetek (opcionális)",
+    existingTcDropHere: "Húzd ide a meglévő teszteseteket",
+    existingTcDropHint: "vagy kattints a tallózáshoz · XLSX, CSV, DOCX, PDF",
     formatLabel: "Kimeneti formátum",
     generate: "Tesztesetek generálása",
     generating: "Generálás folyamatban…",
@@ -110,6 +113,9 @@ const STRINGS = {
     secondaryLabel: "Additional document (optional)",
     secondaryDropHere: "Drop the additional document here",
     secondaryDropHint: "or click to browse · PDF, DOCX, XLSX",
+    existingTcLabel: "Existing test cases (optional)",
+    existingTcDropHere: "Drop the existing test cases here",
+    existingTcDropHint: "or click to browse · XLSX, CSV, DOCX, PDF",
     formatLabel: "Output format",
     generate: "Generate test cases",
     generating: "Generating…",
@@ -171,6 +177,10 @@ async function extractTextFromFile(file: File): Promise<string> {
     return new TextDecoder().decode(arrayBuffer);
   }
 
+  if (filename.endsWith(".csv")) {
+    return await file.text();
+  }
+
   throw new Error("Unsupported file type");
 }
 
@@ -179,7 +189,8 @@ async function callClaudeAPI(
   format: Format,
   lang: Lang,
   tab: TabType,
-  secondaryText?: string
+  secondaryText?: string,
+  existingTcText?: string
 ): Promise<{ result: string; token_count: number }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -192,7 +203,7 @@ async function callClaudeAPI(
       "Content-Type": "application/json",
       Authorization: `Bearer ${anonKey}`,
     },
-    body: JSON.stringify({ text, format, lang, tab, secondaryText }),
+    body: JSON.stringify({ text, format, lang, tab, secondaryText, existingTcText }),
   });
 
   if (!response.ok) {
@@ -357,6 +368,8 @@ export function QAgen({
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [dragOverSecondary, setDragOverSecondary] = useState(false);
+  const [existingTcFile, setExistingTcFile] = useState<File | null>(null);
+  const [dragOverExistingTc, setDragOverExistingTc] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userStoryText, setUserStoryText] = useState("");
   const [areaPath, setAreaPath] = useState("");
@@ -367,6 +380,7 @@ export function QAgen({
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
+  const existingTcInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -399,6 +413,12 @@ export function QAgen({
     setError(null);
   };
 
+  const onPickExistingTc = (f: File | null) => {
+    if (!f || !/\.(pdf|docx|xlsx|csv)$/i.test(f.name)) return;
+    setExistingTcFile(f);
+    setError(null);
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
@@ -411,8 +431,17 @@ export function QAgen({
     onPickSecondary(e.dataTransfer.files?.[0] ?? null);
   };
 
-  const canGenerate = (tab: TabType) =>
-    tab === "userstory" ? !!userStoryText.trim() || !!file : !!file;
+  const onDropExistingTc = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverExistingTc(false);
+    onPickExistingTc(e.dataTransfer.files?.[0] ?? null);
+  };
+
+  const canGenerate = (tab: TabType) => {
+    if (tab === "userstory") return !!userStoryText.trim() || !!file;
+    if (tab === "keyword") return !!file || !!existingTcFile;
+    return !!file;
+  };
 
   const hasResult = (state: TabState) =>
     !!(state.gherkinResult || state.testCases || state.keywordSteps || state.azureCases);
@@ -430,9 +459,12 @@ export function QAgen({
         setError(err instanceof Error ? err.message : t.fileProcessingError);
         return;
       }
+    } else if (tab === "keyword" && existingTcFile) {
+      // No spec provided but existing TCs uploaded — use empty string so API proceeds
+      inputText = "";
     }
 
-    if (!inputText) return;
+    if (inputText === null) return;
 
     let secondaryText: string | undefined;
     if (secondaryFile && tab !== "userstory") {
@@ -444,11 +476,21 @@ export function QAgen({
       }
     }
 
+    let existingTcText: string | undefined;
+    if (existingTcFile && tab === "keyword") {
+      try {
+        existingTcText = await extractTextFromFile(existingTcFile);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t.fileProcessingError);
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText);
+      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText, existingTcText);
       updateTabState(tab, parseTabResult(raw, state.format));
 
       if (userId) {
@@ -564,6 +606,65 @@ export function QAgen({
             <span className="text-sm">{t.secondaryDropHere}</span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">{t.secondaryDropHint}</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const ExistingTcUploadZone = () => (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {t.existingTcLabel}
+        </label>
+        {existingTcFile && (
+          <button
+            type="button"
+            onClick={() => setExistingTcFile(null)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {existingTcFile ? (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
+          <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-mono text-sm truncate">{existingTcFile.name}</p>
+            <p className="text-xs text-muted-foreground">{(existingTcFile.size / 1024).toFixed(1)} KB</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExistingTcFile(null)}
+            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+            aria-label="Remove existing test cases"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOverExistingTc(true); }}
+          onDragLeave={() => setDragOverExistingTc(false)}
+          onDrop={onDropExistingTc}
+          onClick={() => existingTcInputRef.current?.click()}
+          className={`group cursor-pointer rounded-lg border border-dashed bg-card/30 px-4 py-4 text-center transition-all ${
+            dragOverExistingTc ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+          }`}
+        >
+          <input
+            ref={existingTcInputRef}
+            type="file"
+            accept=".pdf,.docx,.xlsx,.csv"
+            className="hidden"
+            onChange={(e) => onPickExistingTc(e.target.files?.[0] ?? null)}
+          />
+          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+            <Upload className="h-4 w-4 group-hover:text-primary transition-colors" />
+            <span className="text-sm">{t.existingTcDropHere}</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">{t.existingTcDropHint}</p>
         </div>
       )}
     </div>
@@ -760,6 +861,7 @@ export function QAgen({
               <PrimaryUploadZone />
             </div>
             {showSecondary && <SecondaryUploadZone />}
+            {tab === "keyword" && <ExistingTcUploadZone />}
           </div>
         )}
 

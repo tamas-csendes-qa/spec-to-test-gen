@@ -12,6 +12,7 @@ interface RequestBody {
   lang: "hu" | "en";
   tab: "quick" | "keyword" | "userstory";
   secondaryText?: string;
+  existingTcText?: string;
 }
 
 const SECONDARY_DOCUMENT_INSTRUCTION =
@@ -20,7 +21,14 @@ const SECONDARY_DOCUMENT_INSTRUCTION =
   "use it to enrich the test cases with accurate field names, validation rules, and technical details. " +
   "Do not generate separate test cases from the secondary document alone.";
 
-function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean): string {
+const EXISTING_TC_INSTRUCTION =
+  "The EXISTING TEST CASES contain one-line or minimal test cases that need to be expanded. " +
+  "Your primary goal is to take each existing test case and expand it into a detailed keyword-driven test case with multiple steps, exact UI element names, preconditions, and expected results per step. " +
+  "Use the specification and additional context documents to enrich the steps with accurate field names, validation rules, and technical details. " +
+  "Keep the original test case topics and titles — only expand the steps and details. " +
+  "If no specification is provided but existing test cases are uploaded, still generate the expanded keyword test cases based on the existing test cases alone.";
+
+function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasExistingTc: boolean): string {
   const langNote = lang === "hu"
     ? "Generate the test cases in Hungarian."
     : "Generate the test cases in English.";
@@ -37,22 +45,31 @@ function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean): stri
     base = `You are an expert software tester. Generate comprehensive test cases based on the provided specification. ${langNote}`;
   }
 
+  const additions: string[] = [];
   if (hasSecondary && (tab === "quick" || tab === "keyword")) {
-    return `${base}\n\n${SECONDARY_DOCUMENT_INSTRUCTION}`;
+    additions.push(SECONDARY_DOCUMENT_INSTRUCTION);
+  }
+  if (hasExistingTc && tab === "keyword") {
+    additions.push(EXISTING_TC_INSTRUCTION);
   }
 
-  return base;
+  return additions.length > 0 ? `${base}\n\n${additions.join("\n\n")}` : base;
 }
 
-function buildDocumentText(text: string, secondaryText?: string): string {
-  if (!secondaryText) return text;
-  return `PRIMARY DOCUMENT (Specification):\n${text}\n\nSECONDARY DOCUMENT (Additional context):\n${secondaryText}`;
+function buildDocumentText(text: string, secondaryText?: string, existingTcText?: string): string {
+  const parts: string[] = [];
+  if (text) parts.push(`PRIMARY DOCUMENT (Specification):\n${text}`);
+  if (secondaryText) parts.push(`SECONDARY DOCUMENT (Additional context):\n${secondaryText}`);
+  if (existingTcText) parts.push(`EXISTING TEST CASES:\n${existingTcText}`);
+  if (parts.length === 0) return text;
+  if (parts.length === 1 && !secondaryText && !existingTcText) return text;
+  return parts.join("\n\n");
 }
 
-function getUserMessage(format: string, text: string, tab: string, secondaryText?: string): string {
-  const documentText = buildDocumentText(text, secondaryText);
-  const hasSecondary = !!secondaryText;
-  const specLabel = hasSecondary ? "documents" : "specification";
+function getUserMessage(format: string, text: string, tab: string, secondaryText?: string, existingTcText?: string): string {
+  const documentText = buildDocumentText(text, secondaryText, existingTcText);
+  const hasSecondary = !!secondaryText || !!existingTcText;
+  const specLabel = hasSecondary ? "documents" : (text ? "specification" : "existing test cases");
 
   if (format === "gherkin") {
     return `Specification:\n\n${documentText}\n\nGenerate Gherkin test cases (Feature and Scenarios) based on this ${specLabel}.`;
@@ -95,9 +112,9 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body: RequestBody = await req.json();
-    const { text, format, lang, tab, secondaryText } = body;
+    const { text, format, lang, tab, secondaryText, existingTcText } = body;
 
-    if (!text) {
+    if (!text && !existingTcText) {
       return new Response(
         JSON.stringify({ error: "Missing text parameter" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -112,8 +129,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText);
-    const userMessage = getUserMessage(format, text, tab, secondaryText);
+    const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText, !!existingTcText);
+    const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
