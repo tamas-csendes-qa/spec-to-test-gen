@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   X,
+  ChevronDown,
 } from "lucide-react";
 import { logUsage, touchSessionByToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,8 @@ const STRINGS = {
     expectedResult: "Elvárt eredmény",
     priority: "Prioritás",
     noResult: "Nincs eredmény még",
+    showPreview: "Előnézet megjelenítése",
+    hidePreview: "Előnézet elrejtése",
   },
   en: {
     subtitle: "Specification analysis is our business.",
@@ -141,6 +144,8 @@ const STRINGS = {
     expectedResult: "Expected Result",
     priority: "Priority",
     noResult: "No result yet",
+    showPreview: "Show preview",
+    hidePreview: "Hide preview",
   },
 } as const;
 
@@ -377,6 +382,11 @@ export function QAgen({
     quick: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
     keyword: { format: "zephyr", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
     userstory: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
+  });
+  const [previewOpen, setPreviewOpen] = useState<Record<TabType, boolean>>({
+    quick: false,
+    keyword: false,
+    userstory: false,
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
@@ -823,6 +833,7 @@ export function QAgen({
     const isGenerating = loading && isActive;
     const resultReady = hasResult(state);
     const showSecondary = tab === "quick" || tab === "keyword";
+    const isPreviewOpen = previewOpen[tab];
 
     return (
       <div className="space-y-5">
@@ -942,21 +953,39 @@ export function QAgen({
           </div>
         )}
 
-        {/* Result */}
+        {/* Collapsible preview */}
         {resultReady && (
           <div className="animate-fade-in">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-              {t.result}
-            </h2>
-            {state.keywordSteps ? (
-              <KeywordPreview steps={state.keywordSteps} onDownload={() => { void downloadResult(tab); }} />
-            ) : state.testCases ? (
-              <ZephyrPreview cases={state.testCases} onDownload={() => { void downloadResult(tab); }} />
-            ) : state.azureCases ? (
-              <AzurePreview cases={state.azureCases} onDownload={() => { void downloadResult(tab); }} />
-            ) : state.gherkinResult ? (
-              <GherkinPreview text={state.gherkinResult} />
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setPreviewOpen((prev) => ({ ...prev, [tab]: !prev[tab] }))}
+              className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <span>{isPreviewOpen ? t.hidePreview : t.showPreview}</span>
+              <ChevronDown
+                className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isPreviewOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {isPreviewOpen && (
+              <div className="mt-3 space-y-3">
+                {state.keywordSteps ? (
+                  <KeywordPreview steps={state.keywordSteps} onDownload={() => { void downloadResult(tab); }} />
+                ) : state.testCases ? (
+                  <ZephyrPreview cases={state.testCases} onDownload={() => { void downloadResult(tab); }} />
+                ) : state.azureCases ? (
+                  <AzurePreview cases={state.azureCases} onDownload={() => { void downloadResult(tab); }} />
+                ) : state.gherkinResult ? (
+                  <>
+                    <GherkinPreview text={state.gherkinResult} />
+                    <Button onClick={() => { void downloadResult(tab); }} className="w-full mt-1" size="sm">
+                      <Download className="h-4 w-4" />
+                      {t.downloadFile}
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            )}
           </div>
         )}
       </div>
