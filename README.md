@@ -24,14 +24,18 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 
 ## Status
 
-## Status
-
 | Version | Status | Description |
 |---------|--------|-------------|
 | v0.1.0 | ✅ Done | UI, file upload, mock output |
 | v0.2.0 | ✅ Done | Claude API integration, Edge Function |
 | v0.3.0 | ✅ Done | Tab structure, role-based system prompts, downloads, Azure CSV |
 | v0.4.0 | ✅ Done | User Story textarea, default formats, tagline, bug fixes |
+| v0.5.0 | ✅ Done | Logo, publish, first demo |
+| v0.6.0 | ✅ Done | Login, authentication, admin panel, concurrent session limit, usage logging, multi-document upload, existing test case expansion |
+| v0.7.0 | 🔄 In progress | Confluence API integration |
+| v0.8.0 | ⏳ Planned | RAG – large document support |
+| v0.9.0 | ⏳ Planned | Playwright-based UI mapping (public apps) |
+| v1.0.0 | ⏳ Planned | Domain, production deployment |
 
 ---
 
@@ -67,3 +71,9 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.2.0 | ✅ Kész | Claude API integráció, Edge Function |
 | v0.3.0 | ✅ Kész | Tab struktúra, szerepkör alapú system promptok, letöltések, Azure CSV |
 | v0.4.0 | ✅ Kész | User Story szövegdoboz, alapértelmezett formátumok, szlogen, hibajavítások |
+| v0.5.0 | ✅ Kész | Logo, publish, első megmutatás |
+| v0.6.0 | ✅ Kész | Login, authentikáció, admin panel, concurrent session limit, usage logging, több dokumentum feltöltés, meglévő tesztesetek bővítése |
+| v0.7.0 | 🔄 Folyamatban | Confluence API integráció |
+| v0.8.0 | ⏳ Tervezett | RAG – nagy dokumentum támogatás |
+| v0.9.0 | ⏳ Tervezett | Playwright alapú oldal feltérképezés (publikus appok) |
+| v1.0.0 | ⏳ Tervezett | Domain, éles deployment |
