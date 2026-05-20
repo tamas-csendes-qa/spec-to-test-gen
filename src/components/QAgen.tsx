@@ -502,6 +502,9 @@ export function QAgen({
     } else if (tab === "keyword" && existingTcFile) {
       // No spec provided but existing TCs uploaded — use empty string so API proceeds
       inputText = "";
+    } else if (confluencePages.length > 0) {
+      // No file provided but Confluence pages selected — use empty string so API proceeds
+      inputText = "";
     }
 
     if (inputText === null) return;
