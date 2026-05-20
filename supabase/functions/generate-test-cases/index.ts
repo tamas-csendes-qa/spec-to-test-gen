@@ -13,6 +13,7 @@ interface RequestBody {
   tab: "quick" | "keyword" | "userstory";
   secondaryText?: string;
   existingTcText?: string;
+  confluenceText?: string;
 }
 
 const SECONDARY_DOCUMENT_INSTRUCTION =
@@ -56,23 +57,26 @@ function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasEx
   return additions.length > 0 ? `${base}\n\n${additions.join("\n\n")}` : base;
 }
 
-function buildDocumentText(text: string, secondaryText?: string, existingTcText?: string): string {
+function buildDocumentText(text: string, secondaryText?: string, existingTcText?: string, confluenceText?: string): string {
   const parts: string[] = [];
-  if (text) parts.push(`PRIMARY DOCUMENT (Specification):\n${text}`);
+  if (confluenceText) parts.push(`CONFLUENCE PAGES CONTENT:\n${confluenceText}`);
+  if (text) parts.push(confluenceText ? `UPLOADED FILES:\n${text}` : `PRIMARY DOCUMENT (Specification):\n${text}`);
   if (secondaryText) parts.push(`SECONDARY DOCUMENT (Additional context):\n${secondaryText}`);
   if (existingTcText) parts.push(`EXISTING TEST CASES:\n${existingTcText}`);
   if (parts.length === 0) return text;
-  if (parts.length === 1 && !secondaryText && !existingTcText) return text;
+  if (parts.length === 1 && !secondaryText && !existingTcText && !confluenceText) return text;
   return parts.join("\n\n");
 }
 
-function getUserMessage(format: string, text: string, tab: string, secondaryText?: string, existingTcText?: string): string {
-  const documentText = buildDocumentText(text, secondaryText, existingTcText);
-  const hasSecondary = !!secondaryText || !!existingTcText;
+function getUserMessage(format: string, text: string, tab: string, secondaryText?: string, existingTcText?: string, confluenceText?: string): string {
+  const documentText = buildDocumentText(text, secondaryText, existingTcText, confluenceText);
+  const hasSecondary = !!secondaryText || !!existingTcText || !!confluenceText;
   const specLabel = hasSecondary ? "documents" : (text ? "specification" : "existing test cases");
 
+  const docLabel = confluenceText ? "documents and Confluence pages" : "specification";
+
   if (format === "gherkin") {
-    return `Specification:\n\n${documentText}\n\nGenerate Gherkin test cases (Feature and Scenarios) based on this ${specLabel}.`;
+    return `Specification:\n\n${documentText}\n\nGenerate Gherkin test cases (Feature and Scenarios) based on this ${specLabel || docLabel}.`;
   }
 
   if (format === "zephyr") {
@@ -102,7 +106,7 @@ Example format:
 Return ONLY valid JSON — no markdown, no code fences, no extra text.`;
   }
 
-  return `Specification:\n\n${documentText}\n\nGenerate test cases based on this ${specLabel}.`;
+  return `Specification:\n\n${documentText}\n\nGenerate test cases based on this ${specLabel || docLabel}.`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -112,9 +116,9 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body: RequestBody = await req.json();
-    const { text, format, lang, tab, secondaryText, existingTcText } = body;
+    const { text, format, lang, tab, secondaryText, existingTcText, confluenceText } = body;
 
-    if (!text && !existingTcText) {
+    if (!text && !existingTcText && !confluenceText) {
       return new Response(
         JSON.stringify({ error: "Missing text parameter" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -129,8 +133,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText, !!existingTcText);
-    const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText);
+    const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
+    const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText, confluenceText);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

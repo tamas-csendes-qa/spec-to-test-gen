@@ -14,6 +14,9 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { logUsage, touchSessionByToken, getMonthlyUsageCount } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
+import { ConfluenceModal } from "@/components/ConfluenceModal";
+import type { ConfluencePage } from "@/components/ConfluenceModal";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -109,6 +112,7 @@ const STRINGS = {
     monthlyLimitReached: "Elérted a havi generálási limitedet. Kérjük lépj kapcsolatba az adminisztrátorral.",
     monthlyGenerations: "Havi generálások",
     unlimited: "korlátlan",
+    confluencePages: "Confluence oldalak",
   },
   en: {
     subtitle: "Specification analysis is our business.",
@@ -152,6 +156,7 @@ const STRINGS = {
     monthlyLimitReached: "You have reached your monthly generation limit. Please contact your administrator.",
     monthlyGenerations: "Monthly generations",
     unlimited: "unlimited",
+    confluencePages: "Confluence pages",
   },
 } as const;
 
@@ -201,7 +206,8 @@ async function callClaudeAPI(
   lang: Lang,
   tab: TabType,
   secondaryText?: string,
-  existingTcText?: string
+  existingTcText?: string,
+  confluenceText?: string
 ): Promise<{ result: string; token_count: number }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -214,7 +220,7 @@ async function callClaudeAPI(
       "Content-Type": "application/json",
       Authorization: `Bearer ${anonKey}`,
     },
-    body: JSON.stringify({ text, format, lang, tab, secondaryText, existingTcText }),
+    body: JSON.stringify({ text, format, lang, tab, secondaryText, existingTcText, confluenceText }),
   });
 
   if (!response.ok) {
@@ -397,6 +403,8 @@ export function QAgen({
     userstory: false,
   });
   const [monthlyCount, setMonthlyCount] = useState<number>(0);
+  const [confluencePages, setConfluencePages] = useState<ConfluencePage[]>([]);
+  const [showConfluenceModal, setShowConfluenceModal] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
   const existingTcInputRef = useRef<HTMLInputElement>(null);
@@ -418,6 +426,13 @@ export function QAgen({
   useEffect(() => {
     if (!userId) return;
     void getMonthlyUsageCount(userId).then(setMonthlyCount);
+    supabase
+      .from("confluence_selected_pages")
+      .select("*")
+      .eq("user_id", userId)
+      .then(({ data }) => {
+        if (data) setConfluencePages(data as ConfluencePage[]);
+      });
   }, [userId]);
 
   const t = STRINGS[lang];
@@ -510,6 +525,30 @@ export function QAgen({
       }
     }
 
+    // Fetch Confluence page contents if any are selected
+    let confluenceText: string | undefined;
+    if (confluencePages.length > 0 && userId) {
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const res = await fetch(`${supabaseUrl}/functions/v1/confluence-proxy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+          body: JSON.stringify({ action: "get_pages_content", page_ids: confluencePages.map((p) => p.page_id) }),
+        });
+        if (res.ok) {
+          const data = await res.json() as { pages: Array<{ title: string; content: string }> };
+          if (data.pages?.length) {
+            confluenceText = data.pages
+              .map((p) => `[${p.title}]\n${p.content}`)
+              .join("\n\n");
+          }
+        }
+      } catch {
+        // Non-fatal: proceed without confluence content
+      }
+    }
+
     // Enforce monthly limit (0 = unlimited)
     if (userId && monthlyGenerationLimit > 0) {
       const currentCount = await getMonthlyUsageCount(userId);
@@ -523,7 +562,7 @@ export function QAgen({
     setError(null);
 
     try {
-      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText, existingTcText);
+      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText, existingTcText, confluenceText);
       updateTabState(tab, parseTabResult(raw, state.format));
 
       if (userId) {
@@ -897,6 +936,18 @@ export function QAgen({
             </div>
             {showSecondary && <SecondaryUploadZone />}
             {tab === "keyword" && <ExistingTcUploadZone />}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowConfluenceModal(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <span className="text-base leading-none">📄</span>
+                {confluencePages.length > 0
+                  ? `Confluence (${confluencePages.length})`
+                  : t.confluencePages}
+              </button>
+            </div>
           </div>
         )}
 
@@ -1107,6 +1158,16 @@ export function QAgen({
           {t.footer}
         </footer>
       </div>
+
+      {showConfluenceModal && userId && (
+        <ConfluenceModal
+          userId={userId}
+          lang={lang}
+          selectedPages={confluencePages}
+          onSave={setConfluencePages}
+          onClose={() => setShowConfluenceModal(false)}
+        />
+      )}
     </div>
   );
 }

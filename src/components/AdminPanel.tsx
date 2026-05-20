@@ -9,6 +9,7 @@ type AdminTab = "companies" | "users" | "usage" | "sessions";
 
 interface UserRow extends UserProfile {
   company_name?: string;
+  has_confluence?: boolean;
 }
 
 interface UsageRow extends UsageLog {
@@ -205,14 +206,17 @@ function UsersTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: usersData }, { data: companiesData }] = await Promise.all([
+    const [{ data: usersData }, { data: companiesData }, { data: confluenceData }] = await Promise.all([
       supabase.from("users").select("*").order("email"),
       supabase.from("companies").select("*").order("name"),
+      supabase.from("confluence_connections").select("user_id"),
     ]);
     const companyMap = Object.fromEntries((companiesData as Company[] ?? []).map((c) => [c.id, c.name]));
+    const confluenceSet = new Set((confluenceData ?? []).map((r: { user_id: string }) => r.user_id));
     const rows: UserRow[] = (usersData as UserProfile[] ?? []).map((u) => ({
       ...u,
       company_name: u.company_id ? companyMap[u.company_id] : undefined,
+      has_confluence: confluenceSet.has(u.id),
     }));
     setUsers(rows);
     setCompanies((companiesData as Company[]) ?? []);
@@ -291,6 +295,7 @@ function UsersTab() {
                 <th className="px-4 py-3 text-left">Cég</th>
                 <th className="px-4 py-3 text-center">Max munkamenetek</th>
                 <th className="px-4 py-3 text-center">Havi limit</th>
+                <th className="px-4 py-3 text-center">Confluence</th>
                 <th className="px-4 py-3 text-center">Admin</th>
                 <th className="px-4 py-3 text-right">Műveletek</th>
               </tr>
@@ -325,6 +330,17 @@ function UsersTab() {
                     />
                   </td>
                   <td className="px-4 py-3 text-center">
+                    {u.has_confluence ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
+                        <span>✓</span> Beállítva
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                        <span>✗</span> Hiányzik
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
                     <input
                       type="checkbox"
                       checked={u.is_admin}
@@ -344,7 +360,7 @@ function UsersTab() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">Még nincs felhasználó.</td>
+                  <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">Még nincs felhasználó.</td>
                 </tr>
               )}
             </tbody>
