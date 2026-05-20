@@ -43,6 +43,7 @@ function App() {
       sessionToken={sessionToken}
       isAdmin={profile.is_admin}
       userEmail={profile.email}
+      monthlyGenerationLimit={profile.monthly_generation_limit ?? 100}
       onAdminClick={profile.is_admin ? () => setShowAdmin(true) : undefined}
       onSignOut={signOut}
     />

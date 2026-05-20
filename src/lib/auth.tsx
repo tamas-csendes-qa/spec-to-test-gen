@@ -247,6 +247,21 @@ export async function logUsage(params: {
   if (error) console.error("[Auth] logUsage error:", error);
 }
 
+export async function getMonthlyUsageCount(userId: string): Promise<number> {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const { count, error } = await supabase
+    .from("usage_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", monthStart);
+  if (error) {
+    console.error("[Auth] getMonthlyUsageCount error:", error);
+    return 0;
+  }
+  return count ?? 0;
+}
+
 export async function touchSessionByToken(userId: string, token: string) {
   await supabase
     .from("sessions")

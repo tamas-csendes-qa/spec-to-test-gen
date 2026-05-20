@@ -50,6 +50,7 @@ Deno.serve(async (req: Request) => {
       company_id?: string | null;
       is_admin?: boolean;
       max_concurrent_sessions?: number;
+      monthly_generation_limit?: number;
     };
 
     if (!body.email || !body.password) {
@@ -81,6 +82,7 @@ Deno.serve(async (req: Request) => {
       company_id: body.company_id ?? null,
       is_admin: body.is_admin ?? false,
       max_concurrent_sessions: body.max_concurrent_sessions ?? 1,
+      monthly_generation_limit: body.monthly_generation_limit ?? 100,
     });
 
     if (profileError) {

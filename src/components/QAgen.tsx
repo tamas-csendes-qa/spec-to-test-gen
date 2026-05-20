@@ -13,7 +13,7 @@ import {
   X,
   ChevronDown,
 } from "lucide-react";
-import { logUsage, touchSessionByToken } from "@/lib/auth";
+import { logUsage, touchSessionByToken, getMonthlyUsageCount } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -106,6 +106,9 @@ const STRINGS = {
     noResult: "Nincs eredmény még",
     showPreview: "Előnézet megjelenítése",
     hidePreview: "Előnézet elrejtése",
+    monthlyLimitReached: "Elérted a havi generálási limitedet. Kérjük lépj kapcsolatba az adminisztrátorral.",
+    monthlyGenerations: "Havi generálások",
+    unlimited: "korlátlan",
   },
   en: {
     subtitle: "Specification analysis is our business.",
@@ -146,6 +149,9 @@ const STRINGS = {
     noResult: "No result yet",
     showPreview: "Show preview",
     hidePreview: "Hide preview",
+    monthlyLimitReached: "You have reached your monthly generation limit. Please contact your administrator.",
+    monthlyGenerations: "Monthly generations",
+    unlimited: "unlimited",
   },
 } as const;
 
@@ -352,6 +358,7 @@ interface QAgenProps {
   sessionToken?: string | null;
   isAdmin?: boolean;
   userEmail?: string;
+  monthlyGenerationLimit?: number;
   onAdminClick?: () => void;
   onSignOut?: () => void;
 }
@@ -362,6 +369,7 @@ export function QAgen({
   sessionToken,
   isAdmin,
   userEmail,
+  monthlyGenerationLimit = 100,
   onAdminClick,
   onSignOut,
 }: QAgenProps = {}) {
@@ -388,6 +396,7 @@ export function QAgen({
     keyword: false,
     userstory: false,
   });
+  const [monthlyCount, setMonthlyCount] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
   const existingTcInputRef = useRef<HTMLInputElement>(null);
@@ -405,6 +414,11 @@ export function QAgen({
     if (typeof window !== "undefined") window.localStorage.setItem("qagen-lang", lang);
     if (typeof document !== "undefined") document.documentElement.lang = lang;
   }, [lang]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void getMonthlyUsageCount(userId).then(setMonthlyCount);
+  }, [userId]);
 
   const t = STRINGS[lang];
 
@@ -496,6 +510,15 @@ export function QAgen({
       }
     }
 
+    // Enforce monthly limit (0 = unlimited)
+    if (userId && monthlyGenerationLimit > 0) {
+      const currentCount = await getMonthlyUsageCount(userId);
+      if (currentCount >= monthlyGenerationLimit) {
+        setError(t.monthlyLimitReached);
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
@@ -506,6 +529,7 @@ export function QAgen({
       if (userId) {
         void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
         if (sessionToken) void touchSessionByToken(userId, sessionToken);
+        void getMonthlyUsageCount(userId).then(setMonthlyCount);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -1046,6 +1070,22 @@ export function QAgen({
             )}
           </div>
         </header>
+
+        {/* Monthly usage indicator */}
+        {userId && (
+          <div className="flex justify-end mb-4">
+            <span className="text-xs text-muted-foreground">
+              {t.monthlyGenerations}:{" "}
+              <span className={monthlyGenerationLimit > 0 && monthlyCount >= monthlyGenerationLimit ? "text-destructive font-semibold" : "font-medium text-foreground"}>
+                {monthlyCount}
+              </span>
+              {" / "}
+              <span className="font-medium text-foreground">
+                {monthlyGenerationLimit === 0 ? t.unlimited : monthlyGenerationLimit}
+              </span>
+            </span>
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs

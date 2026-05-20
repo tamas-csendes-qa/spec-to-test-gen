@@ -27,16 +27,18 @@ interface SessionRow extends Session {
 function EditableNumber({
   value,
   onSave,
+  min = 1,
 }: {
   value: number;
   onSave: (v: number) => void;
+  min?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
 
   const commit = () => {
     const n = parseInt(draft, 10);
-    if (!isNaN(n) && n >= 1) onSave(n);
+    if (!isNaN(n) && n >= min) onSave(n);
     setEditing(false);
   };
 
@@ -44,7 +46,7 @@ function EditableNumber({
     return (
       <input
         type="number"
-        min={1}
+        min={min}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -197,7 +199,7 @@ function UsersTab() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [newUser, setNewUser] = useState({ email: "", password: "", company_id: "", is_admin: false, max_concurrent_sessions: 1 });
+  const [newUser, setNewUser] = useState({ email: "", password: "", company_id: "", is_admin: false, max_concurrent_sessions: 1, monthly_generation_limit: 100 });
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -252,6 +254,7 @@ function UsersTab() {
         company_id: newUser.company_id || null,
         is_admin: newUser.is_admin,
         max_concurrent_sessions: newUser.max_concurrent_sessions,
+        monthly_generation_limit: newUser.monthly_generation_limit,
       }),
     });
 
@@ -263,7 +266,7 @@ function UsersTab() {
       return;
     }
 
-    setNewUser({ email: "", password: "", company_id: "", is_admin: false, max_concurrent_sessions: 1 });
+    setNewUser({ email: "", password: "", company_id: "", is_admin: false, max_concurrent_sessions: 1, monthly_generation_limit: 100 });
     setShowAdd(false);
     void load();
   };
@@ -287,6 +290,7 @@ function UsersTab() {
                 <th className="px-4 py-3 text-left">E-mail</th>
                 <th className="px-4 py-3 text-left">Cég</th>
                 <th className="px-4 py-3 text-center">Max munkamenetek</th>
+                <th className="px-4 py-3 text-center">Havi limit</th>
                 <th className="px-4 py-3 text-center">Admin</th>
                 <th className="px-4 py-3 text-right">Műveletek</th>
               </tr>
@@ -314,6 +318,13 @@ function UsersTab() {
                     />
                   </td>
                   <td className="px-4 py-3 text-center">
+                    <EditableNumber
+                      value={u.monthly_generation_limit ?? 100}
+                      min={0}
+                      onSave={(v) => { void updateUser(u.id, { monthly_generation_limit: v }); }}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
                     <input
                       type="checkbox"
                       checked={u.is_admin}
@@ -333,7 +344,7 @@ function UsersTab() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">Még nincs felhasználó.</td>
+                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">Még nincs felhasználó.</td>
                 </tr>
               )}
             </tbody>
@@ -385,6 +396,16 @@ function UsersTab() {
                   min={1}
                   value={newUser.max_concurrent_sessions}
                   onChange={(e) => setNewUser((p) => ({ ...p, max_concurrent_sessions: parseInt(e.target.value) || 1 }))}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1.5">Havi limit (0=korlátlan)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newUser.monthly_generation_limit}
+                  onChange={(e) => setNewUser((p) => ({ ...p, monthly_generation_limit: Math.max(0, parseInt(e.target.value) || 0) }))}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>

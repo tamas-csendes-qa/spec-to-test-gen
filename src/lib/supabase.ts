@@ -10,6 +10,7 @@ export type UserProfile = {
   email: string;
   company_id: string | null;
   max_concurrent_sessions: number;
+  monthly_generation_limit: number;
   is_admin: boolean;
   created_at: string;
 };
