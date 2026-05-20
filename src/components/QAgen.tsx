@@ -315,6 +315,22 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function tryParseJson<T>(candidate: string): T | null {
+  try {
+    return JSON.parse(candidate) as T;
+  } catch {
+    // Attempt truncation recovery: find the last complete object by trimming after the last `}`
+    // then close the array. Handles responses cut off mid-stream.
+    const lastBrace = candidate.lastIndexOf("}");
+    if (lastBrace === -1) return null;
+    try {
+      return JSON.parse(candidate.slice(0, lastBrace + 1) + "]") as T;
+    } catch {
+      return null;
+    }
+  }
+}
+
 function parseTabResult(
   raw: string,
   format: Format
@@ -323,27 +339,30 @@ function parseTabResult(
     return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
   }
 
-  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  const jsonMatch = raw.match(/\[[\s\S]*/);
   if (!jsonMatch) {
     return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
   }
 
-  try {
-    if (format === "zephyr") {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.length > 0 && "stepAction" in parsed[0]) {
-        const steps: KeywordStep[] = parsed;
-        return { gherkinResult: null, testCases: null, keywordSteps: steps, azureCases: null };
-      }
-      const cases: TestCase[] = parsed;
-      return { gherkinResult: null, testCases: cases, keywordSteps: null, azureCases: null };
+  const candidate = jsonMatch[0];
+
+  if (format === "zephyr") {
+    const parsed = tryParseJson<KeywordStep[] | TestCase[]>(candidate);
+    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+      return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
     }
-    if (format === "azurecsv") {
-      const cases: AzureTestCase[] = JSON.parse(jsonMatch[0]);
-      return { gherkinResult: null, testCases: null, keywordSteps: null, azureCases: cases };
+    if ("stepAction" in parsed[0]) {
+      return { gherkinResult: null, testCases: null, keywordSteps: parsed as KeywordStep[], azureCases: null };
     }
-  } catch {
-    return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
+    return { gherkinResult: null, testCases: parsed as TestCase[], keywordSteps: null, azureCases: null };
+  }
+
+  if (format === "azurecsv") {
+    const parsed = tryParseJson<AzureTestCase[]>(candidate);
+    if (!parsed || !Array.isArray(parsed)) {
+      return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
+    }
+    return { gherkinResult: null, testCases: null, keywordSteps: null, azureCases: parsed };
   }
 
   return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
