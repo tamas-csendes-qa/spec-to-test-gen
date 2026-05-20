@@ -80,15 +80,24 @@ Deno.serve(async (req: Request) => {
       const { confluence_url, email, api_token } = body;
       if (!confluence_url || !email || !api_token) return jsonError("Missing fields");
 
-      // Test credentials before saving
-      const testUrl = `https://${confluence_url}/wiki/api/v2/spaces?limit=1`;
+      // Normalise URL: strip protocol and trailing slash
+      const cleanUrl = (confluence_url as string).replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const authB64 = btoa(`${email}:${api_token}`);
+
+      // Test credentials using the REST API v1 current-user endpoint (most reliable)
+      const testUrl = `https://${cleanUrl}/wiki/rest/api/user/current`;
+      console.log("[confluence-proxy] Testing credentials:", testUrl);
       const testRes = await fetch(testUrl, {
         headers: {
-          Authorization: `Basic ${btoa(`${email}:${api_token}`)}`,
+          Authorization: `Basic ${authB64}`,
           Accept: "application/json",
         },
       });
-      if (!testRes.ok) return jsonError("Confluence credentials invalid or unreachable", 400);
+      const testBody = await testRes.text();
+      console.log("[confluence-proxy] Test response status:", testRes.status, "body:", testBody.slice(0, 300));
+      if (!testRes.ok) {
+        return jsonError(`Confluence credentials invalid (${testRes.status}): ${testBody.slice(0, 200)}`, 400);
+      }
 
       // Upsert (delete old, insert new)
       await callerClient.from("confluence_connections").delete().eq("user_id", user.id);

@@ -531,9 +531,11 @@ export function QAgen({
       try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const { data: { session: cfSession } } = await supabase.auth.getSession();
+        const cfToken = cfSession?.access_token ?? anonKey;
         const res = await fetch(`${supabaseUrl}/functions/v1/confluence-proxy`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfToken}` },
           body: JSON.stringify({ action: "get_pages_content", page_ids: confluencePages.map((p) => p.page_id) }),
         });
         if (res.ok) {
