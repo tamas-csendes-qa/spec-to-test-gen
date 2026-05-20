@@ -477,9 +477,10 @@ export function QAgen({
   };
 
   const canGenerate = (tab: TabType) => {
+    const hasConfluence = confluencePages.length > 0;
     if (tab === "userstory") return !!userStoryText.trim() || !!file;
-    if (tab === "keyword") return !!file || !!existingTcFile;
-    return !!file;
+    if (tab === "keyword") return !!file || !!existingTcFile || hasConfluence;
+    return !!file || hasConfluence;
   };
 
   const hasResult = (state: TabState) =>
