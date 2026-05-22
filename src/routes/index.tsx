@@ -15,7 +15,7 @@ const STRINGS = {
     whyFeatures: [
       "Automatizálásra kész kulcsszavas tesztesetek",
       "Zephyr és Azure DevOps közvetlen import",
-      "Confluence integráció – speci közvetlenül a forrásból",
+      "Confluence integráció – specifikáció közvetlenül a forrásból",
       "Magyar és angol felület",
     ],
     pricingTitle: "Válassz csomagot",
@@ -76,7 +76,7 @@ const STRINGS = {
     whyFeatures: [
       "Keyword-driven test cases ready for automation",
       "Direct Zephyr and Azure DevOps import",
-      "Confluence integration – spec directly from the source",
+      "Confluence integration – specification directly from the source",
       "Hungarian and English UI",
     ],
     pricingTitle: "Choose a plan",
