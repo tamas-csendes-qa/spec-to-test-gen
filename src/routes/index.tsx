@@ -53,7 +53,7 @@ const STRINGS = {
       {
         name: "Pro",
         desc: "Nagy csapatok számára",
-        price: "600 000 HUF",
+        price: "200 000 HUF",
         featured: false,
         features: [
           "25 felhasználó",
