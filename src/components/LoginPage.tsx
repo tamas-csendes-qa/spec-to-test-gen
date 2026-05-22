@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Sparkles, Moon, Sun, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Link } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
 
 interface LoginPageProps {
@@ -42,12 +43,12 @@ export function LoginPage({ dark, onToggleDark }: LoginPageProps) {
     <div className="min-h-screen w-full flex flex-col">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border">
-        <div className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Sparkles className="h-5 w-5" />
           </div>
           <h1 className="text-xl font-bold tracking-tight">QAgen</h1>
-        </div>
+        </Link>
         <button
           onClick={onToggleDark}
           aria-label="Toggle dark mode"
