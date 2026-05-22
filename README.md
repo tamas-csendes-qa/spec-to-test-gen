@@ -1,7 +1,6 @@
-Itt a teljes frissített README:
-markdown# QAgen
+# QAgen
 
-**A specifikáció értelmezése a mi dolgunk**
+**A specifikáció értelmezése a mi dolgunk.**
 
 QAgen is an AI-powered test case generator for software testers. Upload a specification document and get structured test cases instantly — in Hungarian or English.
 
@@ -12,6 +11,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 - 📤 Export formats: Gherkin, Zephyr XLSX, Azure DevOps CSV
 - 🔗 Confluence integration: connect and import pages directly
 - 📎 Multi-document support: specification + additional context + existing test cases
+- 📋 Document structure analysis: analyse and select specific topics before generation
 - 🔐 Authentication: login, admin panel, per-user session and usage limits
 - 🌐 Bilingual: Hungarian and English UI
 - 🌙 Dark mode support
@@ -38,7 +38,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 | v0.5.0 | ✅ Done | Logo, publish, first demo |
 | v0.6.0 | ✅ Done | Login, authentication, admin panel, concurrent session limit, usage logging, multi-document upload, existing test case expansion |
 | v0.7.0 | ✅ Done | Confluence API integration, page selection modal, multi-page support |
-| v0.8.0 | ⏳ Planned | RAG – large document support |
+| v0.8.0 | ✅ Done | Document structure analysis, topic selection, chunking support, landing page with pricing |
 | v0.9.0 | ⏳ Planned | Playwright-based UI mapping (public apps) |
 | v1.0.0 | ⏳ Planned | Domain, production deployment |
 
@@ -46,7 +46,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 
 # Magyar leírás
 
-**A specifikáció értelmezése a mi dolgunk**
+**A specifikáció értelmezése a mi dolgunk.**
 
 A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftvertesztelőknek. Tölts fel egy specifikációs dokumentumot és azonnal kapj strukturált teszteseteket – magyarul vagy angolul.
 
@@ -57,6 +57,7 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 - 📤 Exportálási formátumok: Gherkin, Zephyr XLSX, Azure DevOps CSV
 - 🔗 Confluence integráció: oldalak közvetlen importálása
 - 📎 Több dokumentum támogatás: specifikáció + kiegészítő dokumentum + meglévő tesztesetek
+- 📋 Dokumentum struktúra elemzés: témák kiválasztása generálás előtt
 - 🔐 Authentikáció: bejelentkezés, admin panel, felhasználónkénti session és használati limitek
 - 🌐 Kétnyelvű: magyar és angol felület
 - 🌙 Sötét mód támogatás
@@ -83,6 +84,6 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.5.0 | ✅ Kész | Logo, publish, első megmutatás |
 | v0.6.0 | ✅ Kész | Login, authentikáció, admin panel, concurrent session limit, usage logging, több dokumentum feltöltés, meglévő tesztesetek bővítése |
 | v0.7.0 | ✅ Kész | Confluence API integráció, oldalkiválasztó modal, több oldal támogatás |
-| v0.8.0 | ⏳ Tervezett | RAG – nagy dokumentum támogatás |
+| v0.8.0 | ✅ Kész | Dokumentum struktúra elemzés, téma kiválasztás, chunking támogatás, landing page csomagokkal |
 | v0.9.0 | ⏳ Tervezett | Playwright alapú oldal feltérképezés (publikus appok) |
 | v1.0.0 | ⏳ Tervezett | Domain, éles deployment |
