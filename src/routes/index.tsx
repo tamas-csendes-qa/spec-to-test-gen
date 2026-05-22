@@ -11,7 +11,7 @@ const STRINGS = {
     featured: "Ajánlott",
     month: "/hó",
     whyTitle: "Miért más?",
-    whyTagline: "Amit egy tesztelő óráig ír, a QAgen percek alatt elkészíti.",
+
     whyFeatures: [
       "Automatizálásra kész kulcsszavas tesztesetek",
       "Zephyr és Azure DevOps közvetlen import",
@@ -72,7 +72,7 @@ const STRINGS = {
     featured: "Recommended",
     month: "/month",
     whyTitle: "Why different?",
-    whyTagline: "What takes a tester hours to write, QAgen delivers in minutes.",
+
     whyFeatures: [
       "Keyword-driven test cases ready for automation",
       "Direct Zephyr and Azure DevOps import",
@@ -192,11 +192,8 @@ function LandingPage() {
       <section className="border-b border-border bg-muted/30">
         <div className="mx-auto max-w-5xl px-6 py-14">
           <div className="mb-8 text-center">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {t.whyTitle}
-            </p>
-            <p className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl max-w-2xl mx-auto leading-snug">
-              {t.whyTagline}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
