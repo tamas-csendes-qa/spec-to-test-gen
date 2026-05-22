@@ -31,7 +31,9 @@ const EXISTING_TC_INSTRUCTION =
 
 function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasExistingTc: boolean): string {
   const langNote = lang === "hu"
-    ? "Generate the test cases in Hungarian."
+    ? (tab === "keyword"
+      ? "Generate the test cases in Hungarian. When writing step actions (stepAction), always use imperative form (felszólító mód). Examples: use \"Kattints a Küldés gombra\" instead of \"Kattintás a Küldés gombra\", \"Add meg az email mezőt\" instead of \"Megadás az email mezőben\", \"Navigálj a főoldalra\" instead of \"Navigálás a főoldalra\", \"Ellenőrizd az eredményt\" instead of \"Ellenőrzés az eredményen\". Use imperative form for all step actions throughout the test cases."
+      : "Generate the test cases in Hungarian.")
     : "Generate the test cases in English.";
 
   let base: string;
