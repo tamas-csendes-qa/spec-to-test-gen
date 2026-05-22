@@ -23,7 +23,13 @@ interface AnalyseBody {
   lang: "hu" | "en";
 }
 
-type RequestBody = GenerateBody | AnalyseBody;
+interface ExtractBody {
+  action: "extract";
+  text: string;
+  topics: string[];
+}
+
+type RequestBody = GenerateBody | AnalyseBody | ExtractBody;
 
 const SECONDARY_DOCUMENT_INSTRUCTION =
   "The PRIMARY DOCUMENT is the specification — generate test cases based on this document. " +
@@ -181,6 +187,29 @@ Deno.serve(async (req: Request) => {
       const userMessage = `Document:\n\n${text}\n\nAnalyse this document and list the main topics, chapters, or functional areas as a numbered list. Return ONLY a JSON array of objects like this:\n[\n  {"id": "1", "title": "Topic title", "pages": "1-15"},\n  {"id": "2", "title": "Topic title", "pages": "16-32"}\n]\nReturn only the JSON, no other text.`;
 
       const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 2048);
+
+      return new Response(
+        JSON.stringify({ result, token_count }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // --- EXTRACT action ---
+    if (body.action === "extract") {
+      const { text, topics } = body as ExtractBody;
+
+      if (!text || !topics?.length) {
+        return new Response(
+          JSON.stringify({ error: "Missing text or topics parameter" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const topicList = topics.map((t, i) => `${i + 1}. ${t}`).join("\n");
+      const systemPrompt = "You are a document extraction assistant. Your only job is to copy relevant sections verbatim from the provided document. Do not summarise, paraphrase, or add any commentary.";
+      const userMessage = `From the document below, extract and return ONLY the sections that belong to the following topics. Copy the text verbatim. Do not include any sections unrelated to the listed topics. Do not add headers, comments, or explanations — output only the extracted document text.\n\nTopics to extract:\n${topicList}\n\nDocument:\n\n${text}`;
+
+      const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 16000);
 
       return new Response(
         JSON.stringify({ result, token_count }),

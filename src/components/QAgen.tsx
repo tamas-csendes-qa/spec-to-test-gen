@@ -616,28 +616,18 @@ export function QAgen({
     }
   };
 
-  // Extract the portion of text most relevant to the given topic titles using keyword matching
-  const extractRelevantText = (fullText: string, topicTitles: string[]): string => {
-    if (topicTitles.length === 0) return fullText;
-    const lines = fullText.split("\n");
-    const keywords = topicTitles.flatMap((title) =>
-      title.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
-    );
-    // Score each line by how many keywords it contains, then include surrounding context
-    const lineScores = lines.map((line) => {
-      const lower = line.toLowerCase();
-      return keywords.filter((kw) => lower.includes(kw)).length;
+  const extractSectionsViaClaude = async (fullText: string, topicTitles: string[]): Promise<string> => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-test-cases`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+      body: JSON.stringify({ action: "extract", text: fullText, topics: topicTitles }),
     });
-    const included = new Set<number>();
-    lineScores.forEach((score, idx) => {
-      if (score > 0) {
-        for (let j = Math.max(0, idx - 5); j <= Math.min(lines.length - 1, idx + 20); j++) {
-          included.add(j);
-        }
-      }
-    });
-    if (included.size === 0) return fullText;
-    return Array.from(included).sort((a, b) => a - b).map((i) => lines[i]).join("\n");
+    if (!response.ok) return fullText;
+    const data = await response.json();
+    const extracted: string = data.result ?? "";
+    return extracted.trim() || fullText;
   };
 
   // Split text into chunks of roughly chunkSize characters
@@ -755,44 +745,24 @@ export function QAgen({
       // Topic-based generation (only for quick/keyword with analysis done)
       if (fromSelectedTopics && docTopics.length > 0 && (tab === "quick" || tab === "keyword")) {
         const selected = docTopics.filter((topic) => selectedTopicIds.has(topic.id));
-        const useChunking = selected.length >= 4;
 
-        if (!useChunking) {
-          // RAG-style: extract relevant sections for selected topics
-          const relevantText = extractRelevantText(fullDocText, selected.map((t) => t.title));
-          const effectiveInput = confluencePages.length > 0 ? "" : relevantText;
-          const effectiveConfluence = confluencePages.length > 0 ? relevantText : confluenceText;
-          const { result: raw, token_count } = await callClaudeAPI(effectiveInput, state.format, lang, tab, secondaryText, existingTcText, effectiveConfluence);
-          updateTabState(tab, parseTabResult(raw, state.format));
-          if (userId) {
-            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
-            if (sessionToken) void touchSessionByToken(userId, sessionToken);
-            void getMonthlyUsageCount(userId).then(setMonthlyCount);
-          }
-        } else {
-          // Chunking mode: process each selected topic as a chunk
-          const chunks = selected.map((topic) =>
-            extractRelevantText(fullDocText, [topic.title])
-          ).filter(Boolean);
-          const total = chunks.length;
-          const chunkResults: Array<Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases">> = [];
-          let totalTokens = 0;
+        if (selected.length === 0) {
+          setError(lang === "hu" ? "Kérjük jelölj ki legalább egy témát" : "Please select at least one topic");
+          setLoading(false);
+          return;
+        }
 
-          for (let i = 0; i < chunks.length; i++) {
-            setChunkProgress({ current: i + 1, total });
-            const chunkText = confluencePages.length > 0 ? "" : chunks[i];
-            const chunkConfluence = confluencePages.length > 0 ? chunks[i] : confluenceText;
-            const { result: raw, token_count } = await callClaudeAPI(chunkText, state.format, lang, tab, secondaryText, existingTcText, chunkConfluence);
-            chunkResults.push(parseTabResult(raw, state.format));
-            totalTokens += token_count;
-          }
+        // Use Claude to extract only the sections matching the selected topics
+        const filteredText = await extractSectionsViaClaude(fullDocText, selected.map((t) => t.title));
+        const effectiveInput = confluencePages.length > 0 ? "" : filteredText;
+        const effectiveConfluence = confluencePages.length > 0 ? filteredText : confluenceText;
 
-          updateTabState(tab, mergeResults(chunkResults));
-          if (userId) {
-            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: totalTokens });
-            if (sessionToken) void touchSessionByToken(userId, sessionToken);
-            void getMonthlyUsageCount(userId).then(setMonthlyCount);
-          }
+        const { result: raw, token_count } = await callClaudeAPI(effectiveInput, state.format, lang, tab, secondaryText, existingTcText, effectiveConfluence);
+        updateTabState(tab, parseTabResult(raw, state.format));
+        if (userId) {
+          void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
+          if (sessionToken) void touchSessionByToken(userId, sessionToken);
+          void getMonthlyUsageCount(userId).then(setMonthlyCount);
         }
       } else {
         // No topic selection — check if chunking is needed based on text size
