@@ -1,101 +1,135 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { Sparkles, Moon, Sun, Check } from "lucide-react";
+import { Sparkles, Moon, Sun, Check, Zap, FileDown, BookOpen, Globe } from "lucide-react";
 
 type Lang = "hu" | "en";
 
 const STRINGS = {
   hu: {
-    tagline: "A specifikáció értelmezése a mi dolgunk.",
-    title: "Válassz csomagot",
     loginBtn: "Bejelentkezés",
     contact: "Kapcsolatfelvétel",
     featured: "Ajánlott",
     month: "/hó",
-    starter: {
-      name: "Starter",
-      desc: "Kis csapatok számára",
-      features: [
-        "3 felhasználó",
-        "100 generálás/hó",
-        "Max 50 oldal/generálás",
-        "Gherkin, Zephyr XLSX, Azure CSV",
-        "Confluence integráció",
-      ],
-      price: "45 000 HUF",
-    },
-    team: {
-      name: "Team",
-      desc: "Közepes csapatok számára",
-      features: [
-        "10 felhasználó",
-        "300 generálás/hó",
-        "Max 150 oldal/generálás",
-        "Gherkin, Zephyr XLSX, Azure CSV",
-        "Confluence integráció",
-      ],
-      price: "120 000 HUF",
-    },
-    pro: {
-      name: "Pro",
-      desc: "Nagy csapatok számára",
-      features: [
-        "25 felhasználó",
-        "500 generálás/hó",
-        "Max 500 oldal/generálás",
-        "Gherkin, Zephyr XLSX, Azure CSV",
-        "Confluence integráció",
-        "Dokumentum struktúra elemzés",
-      ],
-      price: "600 000 HUF",
-    },
+    whyTitle: "Miért más?",
+    whyTagline: "Amit egy tesztelő óráig ír, a QAgen percek alatt elkészíti.",
+    whyFeatures: [
+      "Automatizálásra kész kulcsszavas tesztesetek",
+      "Zephyr és Azure DevOps közvetlen import",
+      "Confluence integráció – speci közvetlenül a forrásból",
+      "Magyar és angol felület",
+    ],
+    pricingTitle: "Válassz csomagot",
+    pricingTagline: "Tesztelők által fejlesztve. Tesztelőknek tervezve.",
+    footer: "QAgen v0.8.0",
+    plans: [
+      {
+        name: "Starter",
+        desc: "Kis csapatok számára",
+        price: "45 000 HUF",
+        featured: false,
+        features: [
+          "3 felhasználó",
+          "100 generálás/hó",
+          "Max 50 oldal/generálás",
+          "Gherkin, Zephyr XLSX, Azure CSV",
+          "Confluence integráció",
+          "Dokumentum struktúra elemzés",
+        ],
+      },
+      {
+        name: "Team",
+        desc: "Közepes csapatok számára",
+        price: "120 000 HUF",
+        featured: true,
+        features: [
+          "10 felhasználó",
+          "300 generálás/hó",
+          "Max 150 oldal/generálás",
+          "Gherkin, Zephyr XLSX, Azure CSV",
+          "Confluence integráció",
+          "Dokumentum struktúra elemzés",
+        ],
+      },
+      {
+        name: "Pro",
+        desc: "Nagy csapatok számára",
+        price: "600 000 HUF",
+        featured: false,
+        features: [
+          "25 felhasználó",
+          "500 generálás/hó",
+          "Max 500 oldal/generálás",
+          "Gherkin, Zephyr XLSX, Azure CSV",
+          "Confluence integráció",
+          "Dokumentum struktúra elemzés",
+        ],
+      },
+    ],
   },
   en: {
-    tagline: "Specification analysis is our business.",
-    title: "Choose a plan",
     loginBtn: "Login",
     contact: "Contact us",
     featured: "Recommended",
     month: "/month",
-    starter: {
-      name: "Starter",
-      desc: "For small teams",
-      features: [
-        "3 users",
-        "100 generations/month",
-        "Max 50 pages/generation",
-        "Gherkin, Zephyr XLSX, Azure CSV",
-        "Confluence integration",
-      ],
-      price: "45,000 HUF",
-    },
-    team: {
-      name: "Team",
-      desc: "For growing teams",
-      features: [
-        "10 users",
-        "300 generations/month",
-        "Max 150 pages/generation",
-        "Gherkin, Zephyr XLSX, Azure CSV",
-        "Confluence integration",
-      ],
-      price: "120,000 HUF",
-    },
-    pro: {
-      name: "Pro",
-      desc: "For large teams",
-      features: [
-        "25 users",
-        "500 generations/month",
-        "Max 500 pages/generation",
-        "Gherkin, Zephyr XLSX, Azure CSV",
-        "Confluence integration",
-        "Document structure analysis",
-      ],
-      price: "600,000 HUF",
-    },
+    whyTitle: "Why different?",
+    whyTagline: "What takes a tester hours to write, QAgen delivers in minutes.",
+    whyFeatures: [
+      "Keyword-driven test cases ready for automation",
+      "Direct Zephyr and Azure DevOps import",
+      "Confluence integration – spec directly from the source",
+      "Hungarian and English UI",
+    ],
+    pricingTitle: "Choose a plan",
+    pricingTagline: "Built by testers. Designed for testers.",
+    footer: "QAgen v0.8.0",
+    plans: [
+      {
+        name: "Starter",
+        desc: "For small teams",
+        price: "45,000 HUF",
+        featured: false,
+        features: [
+          "3 users",
+          "100 generations/month",
+          "Max 50 pages/generation",
+          "Gherkin, Zephyr XLSX, Azure CSV",
+          "Confluence integration",
+          "Document structure analysis",
+        ],
+      },
+      {
+        name: "Team",
+        desc: "For growing teams",
+        price: "120,000 HUF",
+        featured: true,
+        features: [
+          "10 users",
+          "300 generations/month",
+          "Max 150 pages/generation",
+          "Gherkin, Zephyr XLSX, Azure CSV",
+          "Confluence integration",
+          "Document structure analysis",
+        ],
+      },
+      {
+        name: "Pro",
+        desc: "For large teams",
+        price: "600,000 HUF",
+        featured: false,
+        features: [
+          "25 users",
+          "500 generations/month",
+          "Max 500 pages/generation",
+          "Gherkin, Zephyr XLSX, Azure CSV",
+          "Confluence integration",
+          "Document structure analysis",
+        ],
+      },
+    ],
   },
 } as const;
+
+const WHY_ICONS = [Zap, FileDown, BookOpen, Globe];
 
 function LandingPage() {
   const navigate = useNavigate();
@@ -118,14 +152,8 @@ function LandingPage() {
 
   const t = STRINGS[lang];
 
-  const plans = [
-    { key: "starter", data: t.starter, featured: false },
-    { key: "team", data: t.team, featured: true },
-    { key: "pro", data: t.pro, featured: false },
-  ] as const;
-
   return (
-    <div className="min-h-screen w-full bg-background">
+    <div className="min-h-screen w-full bg-background text-foreground">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
@@ -160,29 +188,58 @@ function LandingPage() {
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="mx-auto max-w-5xl px-6 pt-16 pb-12 text-center">
-        <p className="text-sm font-medium text-muted-foreground mb-3 tracking-wide uppercase">
-          {t.tagline}
-        </p>
-        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-          {t.title}
-        </h1>
+      {/* Why different section */}
+      <section className="border-b border-border bg-muted/30">
+        <div className="mx-auto max-w-5xl px-6 py-14">
+          <div className="mb-8 text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+              {t.whyTitle}
+            </p>
+            <p className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl max-w-2xl mx-auto leading-snug">
+              {t.whyTagline}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {t.whyFeatures.map((feature, i) => {
+              const Icon = WHY_ICONS[i];
+              return (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-4 transition-colors hover:border-primary/40"
+                >
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <p className="text-sm font-medium leading-snug text-foreground">{feature}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </section>
 
-      {/* Pricing cards */}
-      <section className="mx-auto max-w-5xl px-6 pb-20">
+      {/* Pricing section */}
+      <section className="mx-auto max-w-5xl px-6 py-16">
+        <div className="mb-10 text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            {t.pricingTitle}
+          </h1>
+          <p className="mt-3 text-base text-muted-foreground">
+            {t.pricingTagline}
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {plans.map(({ key, data, featured }) => (
+          {t.plans.map((plan) => (
             <div
-              key={key}
+              key={plan.name}
               className={`relative flex flex-col rounded-2xl border p-7 transition-all ${
-                featured
+                plan.featured
                   ? "border-primary bg-primary/5 shadow-lg ring-1 ring-primary/20 dark:bg-primary/10"
                   : "border-border bg-card hover:border-primary/40 hover:shadow-md"
               }`}
             >
-              {featured && (
+              {plan.featured && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
                   <span className="inline-flex items-center rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm">
                     {t.featured}
@@ -191,22 +248,28 @@ function LandingPage() {
               )}
 
               <div className="mb-5">
-                <h2 className="text-xl font-bold text-foreground">{data.name}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{data.desc}</p>
+                <h2 className="text-xl font-bold text-foreground">{plan.name}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{plan.desc}</p>
               </div>
 
               <div className="mb-6">
-                <span className="text-3xl font-bold text-foreground">{data.price}</span>
+                <span className="text-3xl font-bold text-foreground">{plan.price}</span>
                 <span className="text-sm text-muted-foreground">{t.month}</span>
               </div>
 
               <ul className="mb-8 flex-1 space-y-2.5">
-                {data.features.map((feature, i) => (
+                {plan.features.map((feature, i) => (
                   <li key={i} className="flex items-start gap-2.5 text-sm text-foreground">
-                    <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${featured ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+                    <span
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
+                        plan.featured
+                          ? "bg-primary/20 text-primary"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
                       <Check className="h-2.5 w-2.5" strokeWidth={3} />
                     </span>
-                    <span className={featured ? "font-medium" : ""}>{feature}</span>
+                    <span className={plan.featured ? "font-medium" : ""}>{feature}</span>
                   </li>
                 ))}
               </ul>
@@ -214,7 +277,7 @@ function LandingPage() {
               <a
                 href="mailto:info@qagen.hu"
                 className={`inline-flex h-10 w-full items-center justify-center rounded-lg text-sm font-semibold transition-all ${
-                  featured
+                  plan.featured
                     ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
                     : "border border-border bg-background text-foreground hover:bg-accent hover:border-primary/50"
                 }`}
@@ -227,7 +290,7 @@ function LandingPage() {
       </section>
 
       <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
-        QAgen v0.8.0
+        {t.footer}
       </footer>
     </div>
   );
@@ -240,7 +303,8 @@ export const Route = createFileRoute("/")({
       { title: "QAgen – Tesztesetek generálása specifikációból" },
       {
         name: "description",
-        content: "QAgen: tölts fel egy specifikációt és generálj Gherkin vagy Zephyr XLSX teszteseteket másodpercek alatt.",
+        content:
+          "QAgen: tölts fel egy specifikációt és generálj Gherkin vagy Zephyr XLSX teszteseteket másodpercek alatt.",
       },
     ],
   }),
