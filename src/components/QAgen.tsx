@@ -69,12 +69,18 @@ interface TabState {
   azureCases: AzureTestCase[] | null;
 }
 
+interface DocTopic {
+  id: string;
+  title: string;
+  pages: string;
+}
+
 const STRINGS = {
   hu: {
     subtitle: "A specifikáció értelmezése a mi dolgunk.",
     specLabel: "Specifikáció",
     dropHere: "Húzd ide a specifikációt",
-    dropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 30 oldal",
+    dropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 50 MB",
     pickAnother: "kattints másik fájl kiválasztásához",
     secondaryLabel: "Kiegészítő dokumentum (opcionális)",
     secondaryDropHere: "Húzd ide a kiegészítő dokumentumot",
@@ -88,11 +94,12 @@ const STRINGS = {
     result: "Eredmény",
     download: "Letöltés",
     downloadFile: "Fájl letöltése",
-    footer: "QAgen v0.7.0",
+    footer: "QAgen v0.8.0",
     toggleLang: "Nyelv váltása",
     toggleDark: "Sötét mód váltása",
     error: "Hiba",
     fileProcessingError: "Nem sikerült feldolgozni a fájlt",
+    fileTooLarge: "A fájl mérete meghaladja az 50 MB-os korlátot.",
     quickTest: "Gyors teszt",
     keyword: "Kulcsszavas",
     userStory: "Felhasználói igény",
@@ -113,12 +120,21 @@ const STRINGS = {
     monthlyGenerations: "Havi generálási keret",
     unlimited: "korlátlan",
     confluencePages: "Confluence oldalak",
+    analyse: "Elemzés",
+    analysing: "Elemzés folyamatban…",
+    docStructure: "Dokumentum struktúra",
+    selectAll: "Mindent kijelöl",
+    deselectAll: "Mindent töröl",
+    generateFromSelected: "Generálás a kijelöltekből",
+    chunkProgress: (current: number, total: number) => `Feldolgozás: ${current}/${total} rész – kérjük várjon…`,
+    noTopicsFound: "Nem találhatók témakörök a dokumentumban.",
+    page: "oldal",
   },
   en: {
     subtitle: "Specification analysis is our business.",
     specLabel: "Specification",
     dropHere: "Drop the specification here",
-    dropHint: "or click to browse · PDF, DOCX, XLSX · max 30 pages",
+    dropHint: "or click to browse · PDF, DOCX, XLSX · max 50 MB",
     pickAnother: "click to pick another file",
     secondaryLabel: "Additional document (optional)",
     secondaryDropHere: "Drop the additional document here",
@@ -132,11 +148,12 @@ const STRINGS = {
     result: "Result",
     download: "Download",
     downloadFile: "Download file",
-    footer: "QAgen v0.7.0",
+    footer: "QAgen v0.8.0",
     toggleLang: "Switch language",
     toggleDark: "Toggle dark mode",
     error: "Error",
     fileProcessingError: "Failed to process file",
+    fileTooLarge: "File size exceeds the 50 MB limit.",
     quickTest: "Quick Test",
     keyword: "Keyword",
     userStory: "User Story",
@@ -157,10 +174,21 @@ const STRINGS = {
     monthlyGenerations: "Monthly generation quota",
     unlimited: "unlimited",
     confluencePages: "Confluence pages",
+    analyse: "Analyse",
+    analysing: "Analysing…",
+    docStructure: "Document structure",
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
+    generateFromSelected: "Generate from selected",
+    chunkProgress: (current: number, total: number) => `Processing: ${current}/${total} parts – please wait…`,
+    noTopicsFound: "No topics found in the document.",
+    page: "page",
   },
 } as const;
 
 const ACCEPT = ".pdf,.docx,.xlsx";
+
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 async function extractTextFromFile(file: File): Promise<string> {
   const filename = file.name.toLowerCase();
@@ -169,7 +197,7 @@ async function extractTextFromFile(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let text = "";
-    for (let i = 1; i <= Math.min(pdf.numPages, 30); i++) {
+    for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       text += textContent.items.map((item: any) => item.str).join(" ") + "\n";
@@ -230,6 +258,41 @@ async function callClaudeAPI(
 
   const data = await response.json();
   return { result: data.result, token_count: data.token_count ?? 0 };
+}
+
+async function callAnalyseAPI(text: string, lang: Lang): Promise<DocTopic[]> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) throw new Error("Supabase configuration missing");
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/generate-test-cases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+    body: JSON.stringify({ action: "analyse", text, lang }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Analysis request failed");
+  }
+
+  const data = await response.json();
+  const raw: string = data.result ?? "";
+  const match = raw.match(/\[[\s\S]*/);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? (parsed as DocTopic[]) : [];
+  } catch {
+    const lastBrace = match[0].lastIndexOf("}");
+    if (lastBrace === -1) return [];
+    try {
+      return JSON.parse(match[0].slice(0, lastBrace + 1) + "]") as DocTopic[];
+    } catch {
+      return [];
+    }
+  }
 }
 
 async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
@@ -424,6 +487,12 @@ export function QAgen({
   const [monthlyCount, setMonthlyCount] = useState<number>(0);
   const [confluencePages, setConfluencePages] = useState<ConfluencePage[]>([]);
   const [showConfluenceModal, setShowConfluenceModal] = useState(false);
+  // Analysis state
+  const [docTopics, setDocTopics] = useState<DocTopic[]>([]);
+  const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(new Set());
+  const [analysing, setAnalysing] = useState(false);
+  const [structureOpen, setStructureOpen] = useState(false);
+  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
   const existingTcInputRef = useRef<HTMLInputElement>(null);
@@ -461,7 +530,11 @@ export function QAgen({
 
   const onPick = (f: File | null) => {
     if (!f || !/\.(pdf|docx|xlsx)$/i.test(f.name)) return;
+    if (f.size > MAX_FILE_SIZE_BYTES) { setError(t.fileTooLarge); return; }
     setFile(f);
+    setDocTopics([]);
+    setSelectedTopicIds(new Set());
+    setStructureOpen(false);
     setError(null);
   };
 
@@ -505,7 +578,99 @@ export function QAgen({
   const hasResult = (state: TabState) =>
     !!(state.gherkinResult || state.testCases || state.keywordSteps || state.azureCases);
 
-  const generate = async (tab: TabType) => {
+  const canAnalyse = (tab: TabType) =>
+    (tab === "quick" || tab === "keyword") && (!!file || confluencePages.length > 0);
+
+  const analyseDocument = async (tab: TabType) => {
+    if (!canAnalyse(tab)) return;
+    setAnalysing(true);
+    setError(null);
+    try {
+      let textToAnalyse = "";
+      if (file) {
+        textToAnalyse = await extractTextFromFile(file);
+      } else if (confluencePages.length > 0 && userId) {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        const { data: { session: cfSession } } = await supabase.auth.getSession();
+        const cfToken = cfSession?.access_token ?? anonKey;
+        const res = await fetch(`${supabaseUrl}/functions/v1/confluence-proxy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfToken}` },
+          body: JSON.stringify({ action: "get_pages_content", page_ids: confluencePages.map((p) => p.page_id) }),
+        });
+        if (res.ok) {
+          const data = await res.json() as { pages: Array<{ title: string; content: string }> };
+          textToAnalyse = data.pages?.map((p) => `[${p.title}]\n${p.content}`).join("\n\n") ?? "";
+        }
+      }
+      if (!textToAnalyse) return;
+      const topics = await callAnalyseAPI(textToAnalyse, lang);
+      setDocTopics(topics);
+      setSelectedTopicIds(new Set(topics.map((t) => t.id)));
+      setStructureOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalysing(false);
+    }
+  };
+
+  // Extract the portion of text most relevant to the given topic titles using keyword matching
+  const extractRelevantText = (fullText: string, topicTitles: string[]): string => {
+    if (topicTitles.length === 0) return fullText;
+    const lines = fullText.split("\n");
+    const keywords = topicTitles.flatMap((title) =>
+      title.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+    );
+    // Score each line by how many keywords it contains, then include surrounding context
+    const lineScores = lines.map((line) => {
+      const lower = line.toLowerCase();
+      return keywords.filter((kw) => lower.includes(kw)).length;
+    });
+    const included = new Set<number>();
+    lineScores.forEach((score, idx) => {
+      if (score > 0) {
+        for (let j = Math.max(0, idx - 5); j <= Math.min(lines.length - 1, idx + 20); j++) {
+          included.add(j);
+        }
+      }
+    });
+    if (included.size === 0) return fullText;
+    return Array.from(included).sort((a, b) => a - b).map((i) => lines[i]).join("\n");
+  };
+
+  // Split text into chunks of roughly chunkSize characters
+  const splitIntoChunks = (text: string, chunkSize: number): string[] => {
+    const chunks: string[] = [];
+    let start = 0;
+    while (start < text.length) {
+      let end = start + chunkSize;
+      if (end < text.length) {
+        // Try to break at a paragraph boundary
+        const breakAt = text.lastIndexOf("\n\n", end);
+        if (breakAt > start) end = breakAt;
+      }
+      chunks.push(text.slice(start, end).trim());
+      start = end;
+    }
+    return chunks.filter(Boolean);
+  };
+
+  const CHUNK_CHAR_SIZE = 200_000; // ~100 pages worth of text
+
+  const mergeResults = (results: Array<Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases">>): Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases"> => {
+    const allKeywordSteps = results.flatMap((r) => r.keywordSteps ?? []);
+    if (allKeywordSteps.length > 0) return { gherkinResult: null, testCases: null, keywordSteps: allKeywordSteps, azureCases: null };
+    const allTestCases = results.flatMap((r) => r.testCases ?? []);
+    if (allTestCases.length > 0) return { gherkinResult: null, testCases: allTestCases, keywordSteps: null, azureCases: null };
+    const allAzure = results.flatMap((r) => r.azureCases ?? []);
+    if (allAzure.length > 0) return { gherkinResult: null, testCases: null, keywordSteps: null, azureCases: allAzure };
+    const gherkin = results.map((r) => r.gherkinResult).filter(Boolean).join("\n\n");
+    return { gherkinResult: gherkin || null, testCases: null, keywordSteps: null, azureCases: null };
+  };
+
+  const generate = async (tab: TabType, fromSelectedTopics = false) => {
     const state = tabStates[tab];
 
     let inputText: string | null = null;
@@ -519,10 +684,8 @@ export function QAgen({
         return;
       }
     } else if (tab === "keyword" && existingTcFile) {
-      // No spec provided but existing TCs uploaded — use empty string so API proceeds
       inputText = "";
     } else if (confluencePages.length > 0) {
-      // No file provided but Confluence pages selected — use empty string so API proceeds
       inputText = "";
     }
 
@@ -564,9 +727,7 @@ export function QAgen({
         if (res.ok) {
           const data = await res.json() as { pages: Array<{ title: string; content: string }> };
           if (data.pages?.length) {
-            confluenceText = data.pages
-              .map((p) => `[${p.title}]\n${p.content}`)
-              .join("\n\n");
+            confluenceText = data.pages.map((p) => `[${p.title}]\n${p.content}`).join("\n\n");
           }
         }
       } catch {
@@ -585,20 +746,95 @@ export function QAgen({
 
     setLoading(true);
     setError(null);
+    setChunkProgress(null);
 
     try {
-      const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText, existingTcText, confluenceText);
-      updateTabState(tab, parseTabResult(raw, state.format));
+      // Determine the effective document text (file or confluence)
+      const fullDocText = inputText || confluenceText || "";
 
-      if (userId) {
-        void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
-        if (sessionToken) void touchSessionByToken(userId, sessionToken);
-        void getMonthlyUsageCount(userId).then(setMonthlyCount);
+      // Topic-based generation (only for quick/keyword with analysis done)
+      if (fromSelectedTopics && docTopics.length > 0 && (tab === "quick" || tab === "keyword")) {
+        const selected = docTopics.filter((topic) => selectedTopicIds.has(topic.id));
+        const useChunking = selected.length >= 4;
+
+        if (!useChunking) {
+          // RAG-style: extract relevant sections for selected topics
+          const relevantText = extractRelevantText(fullDocText, selected.map((t) => t.title));
+          const effectiveInput = confluencePages.length > 0 ? "" : relevantText;
+          const effectiveConfluence = confluencePages.length > 0 ? relevantText : confluenceText;
+          const { result: raw, token_count } = await callClaudeAPI(effectiveInput, state.format, lang, tab, secondaryText, existingTcText, effectiveConfluence);
+          updateTabState(tab, parseTabResult(raw, state.format));
+          if (userId) {
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
+            if (sessionToken) void touchSessionByToken(userId, sessionToken);
+            void getMonthlyUsageCount(userId).then(setMonthlyCount);
+          }
+        } else {
+          // Chunking mode: process each selected topic as a chunk
+          const chunks = selected.map((topic) =>
+            extractRelevantText(fullDocText, [topic.title])
+          ).filter(Boolean);
+          const total = chunks.length;
+          const chunkResults: Array<Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases">> = [];
+          let totalTokens = 0;
+
+          for (let i = 0; i < chunks.length; i++) {
+            setChunkProgress({ current: i + 1, total });
+            const chunkText = confluencePages.length > 0 ? "" : chunks[i];
+            const chunkConfluence = confluencePages.length > 0 ? chunks[i] : confluenceText;
+            const { result: raw, token_count } = await callClaudeAPI(chunkText, state.format, lang, tab, secondaryText, existingTcText, chunkConfluence);
+            chunkResults.push(parseTabResult(raw, state.format));
+            totalTokens += token_count;
+          }
+
+          updateTabState(tab, mergeResults(chunkResults));
+          if (userId) {
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: totalTokens });
+            if (sessionToken) void touchSessionByToken(userId, sessionToken);
+            void getMonthlyUsageCount(userId).then(setMonthlyCount);
+          }
+        }
+      } else {
+        // No topic selection — check if chunking is needed based on text size
+        const textForChunkCheck = fullDocText;
+        const needsChunking = textForChunkCheck.length > CHUNK_CHAR_SIZE;
+
+        if (needsChunking && (tab === "quick" || tab === "keyword")) {
+          const chunks = splitIntoChunks(textForChunkCheck, CHUNK_CHAR_SIZE);
+          const total = chunks.length;
+          const chunkResults: Array<Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases">> = [];
+          let totalTokens = 0;
+
+          for (let i = 0; i < chunks.length; i++) {
+            setChunkProgress({ current: i + 1, total });
+            const chunkText = confluencePages.length > 0 ? "" : chunks[i];
+            const chunkConfluence = confluencePages.length > 0 ? chunks[i] : confluenceText;
+            const { result: raw, token_count } = await callClaudeAPI(chunkText, state.format, lang, tab, secondaryText, existingTcText, chunkConfluence);
+            chunkResults.push(parseTabResult(raw, state.format));
+            totalTokens += token_count;
+          }
+
+          updateTabState(tab, mergeResults(chunkResults));
+          if (userId) {
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: totalTokens });
+            if (sessionToken) void touchSessionByToken(userId, sessionToken);
+            void getMonthlyUsageCount(userId).then(setMonthlyCount);
+          }
+        } else {
+          const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText, existingTcText, confluenceText);
+          updateTabState(tab, parseTabResult(raw, state.format));
+          if (userId) {
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
+            if (sessionToken) void touchSessionByToken(userId, sessionToken);
+            void getMonthlyUsageCount(userId).then(setMonthlyCount);
+          }
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+      setChunkProgress(null);
     }
   };
 
@@ -1013,16 +1249,41 @@ export function QAgen({
         )}
 
         {/* Action buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {(tab === "quick" || tab === "keyword") && canAnalyse(tab) && (
+            <Button
+              variant="outline"
+              onClick={() => { void analyseDocument(tab); }}
+              disabled={analysing || isGenerating}
+              className="h-11 px-4 text-sm font-medium"
+            >
+              {analysing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t.analysing}
+                </>
+              ) : (
+                <>
+                  <span className="mr-1.5 text-base leading-none">📋</span>
+                  {t.analyse}
+                </>
+              )}
+            </Button>
+          )}
           <Button
             onClick={() => { void generate(tab); }}
-            disabled={!canGenerate(tab) || isGenerating}
+            disabled={!canGenerate(tab) || isGenerating || analysing}
             className="flex-1 h-11 text-sm font-semibold"
           >
-            {isGenerating ? (
+            {isGenerating && !chunkProgress ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {t.generating}
+              </>
+            ) : isGenerating && chunkProgress ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t.chunkProgress(chunkProgress.current, chunkProgress.total)}
               </>
             ) : (
               t.generate
@@ -1039,6 +1300,105 @@ export function QAgen({
             <span className="hidden sm:inline ml-1">{t.download}</span>
           </Button>
         </div>
+
+        {/* Chunk progress bar */}
+        {isGenerating && chunkProgress && (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</span>
+              <span>{Math.round((chunkProgress.current / chunkProgress.total) * 100)}%</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500"
+                style={{ width: `${(chunkProgress.current / chunkProgress.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Document structure panel */}
+        {(tab === "quick" || tab === "keyword") && docTopics.length > 0 && isActive && (
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setStructureOpen((o) => !o)}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-base leading-none">📋</span>
+                {t.docStructure}
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({selectedTopicIds.size}/{docTopics.length})
+                </span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const allSelected = selectedTopicIds.size === docTopics.length;
+                    setSelectedTopicIds(allSelected ? new Set() : new Set(docTopics.map((t) => t.id)));
+                  }}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {selectedTopicIds.size === docTopics.length ? t.deselectAll : t.selectAll}
+                </button>
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${structureOpen ? "rotate-180" : ""}`}
+                />
+              </div>
+            </button>
+
+            {structureOpen && (
+              <div className="border-t border-border divide-y divide-border">
+                {docTopics.map((topic) => (
+                  <label
+                    key={topic.id}
+                    className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTopicIds.has(topic.id)}
+                      onChange={(e) => {
+                        setSelectedTopicIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(topic.id); else next.delete(topic.id);
+                          return next;
+                        });
+                      }}
+                      className="h-4 w-4 rounded border-border accent-primary"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{topic.id}. {topic.title}</span>
+                      {topic.pages && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({topic.pages}. {t.page})
+                        </span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                <div className="px-4 py-3">
+                  <Button
+                    onClick={() => { void generate(tab, true); }}
+                    disabled={selectedTopicIds.size === 0 || isGenerating || analysing}
+                    className="w-full h-10 text-sm font-semibold"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {chunkProgress ? t.chunkProgress(chunkProgress.current, chunkProgress.total) : t.generating}
+                      </>
+                    ) : (
+                      t.generateFromSelected
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {error && isActive && (

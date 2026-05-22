@@ -6,7 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-interface RequestBody {
+interface GenerateBody {
+  action?: "generate";
   text: string;
   format: "gherkin" | "zephyr" | "azurecsv";
   lang: "hu" | "en";
@@ -15,6 +16,14 @@ interface RequestBody {
   existingTcText?: string;
   confluenceText?: string;
 }
+
+interface AnalyseBody {
+  action: "analyse";
+  text: string;
+  lang: "hu" | "en";
+}
+
+type RequestBody = GenerateBody | AnalyseBody;
 
 const SECONDARY_DOCUMENT_INSTRUCTION =
   "The PRIMARY DOCUMENT is the specification — generate test cases based on this document. " +
@@ -111,6 +120,33 @@ Return ONLY valid JSON — no markdown, no code fences, no extra text.`;
   return `Specification:\n\n${documentText}\n\nGenerate test cases based on this ${specLabel || docLabel}.`;
 }
 
+async function callClaude(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 16000): Promise<{ text: string; token_count: number }> {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || "Claude API request failed");
+  }
+
+  const data = await response.json();
+  const text = data.content[0].text;
+  const token_count = (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0);
+  return { text, token_count };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -118,7 +154,42 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body: RequestBody = await req.json();
-    const { text, format, lang, tab, secondaryText, existingTcText, confluenceText } = body;
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: "API key not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // --- ANALYSE action ---
+    if (body.action === "analyse") {
+      const { text, lang } = body as AnalyseBody;
+
+      if (!text) {
+        return new Response(
+          JSON.stringify({ error: "Missing text parameter" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const systemPrompt = lang === "hu"
+        ? "Te egy dokumentumelemző. Azonosítsd a dokumentum főbb témaköreit, fejezeteit vagy funkcionális területeit, és adj vissza CSAK egy JSON tömböt."
+        : "You are a document analyst. Identify the main topics, chapters, or functional areas of the document and return ONLY a JSON array.";
+
+      const userMessage = `Document:\n\n${text}\n\nAnalyse this document and list the main topics, chapters, or functional areas as a numbered list. Return ONLY a JSON array of objects like this:\n[\n  {"id": "1", "title": "Topic title", "pages": "1-15"},\n  {"id": "2", "title": "Topic title", "pages": "16-32"}\n]\nReturn only the JSON, no other text.`;
+
+      const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 2048);
+
+      return new Response(
+        JSON.stringify({ result, token_count }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // --- GENERATE action (default) ---
+    const { text, format, lang, tab, secondaryText, existingTcText, confluenceText } = body as GenerateBody;
 
     if (!text && !existingTcText && !confluenceText) {
       return new Response(
@@ -127,43 +198,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: "API key not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
     const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText, confluenceText);
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 16000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      return new Response(
-        JSON.stringify({ error: error.error?.message || "API request failed" }),
-        { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const data = await response.json();
-    const result = data.content[0].text;
-    const token_count = (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0);
+    const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage);
 
     return new Response(
       JSON.stringify({ result, token_count }),
