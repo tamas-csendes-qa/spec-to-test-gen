@@ -8,6 +8,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 
 - 📄 File upload: PDF, DOCX, XLSX
 - 🧪 Three test case types: Quick Test, Keyword-driven, User Story
+- 🔄 Guided workflow: step-by-step test case creation with progressive disclosure
 - 📤 Export formats: Gherkin, Zephyr XLSX, Azure DevOps CSV
 - 🔗 Confluence integration: connect and import pages directly
 - 📎 Multi-document support: specification + additional context + existing test cases
@@ -39,7 +40,8 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 | v0.6.0 | ✅ Done | Login, authentication, admin panel, concurrent session limit, usage logging, multi-document upload, existing test case expansion |
 | v0.7.0 | ✅ Done | Confluence API integration, page selection modal, multi-page support |
 | v0.8.0 | ✅ Done | Document structure analysis, topic selection, chunking support, landing page with pricing |
-| v0.9.0 | ⏳ Planned | Playwright-based UI mapping (public apps) |
+| v0.9.0 | ⏳ Planned | UX refactor, progressive disclosure workflow, Playwright placeholder, per-user feature visibility |
+| v0.10.0 | ⏳ Planned | Playwright UI mapping (public apps), TestRail and Xray export |
 | v1.0.0 | ⏳ Planned | Domain, production deployment |
 
 ---
@@ -54,6 +56,7 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 
 - 📄 Fájlfeltöltés: PDF, DOCX, XLSX
 - 🧪 Háromféle teszteset típus: Gyors teszt, Kulcsszavas, Felhasználói igény
+- 🔄 Irányított workflow: lépésről lépésre vezető teszteset készítés
 - 📤 Exportálási formátumok: Gherkin, Zephyr XLSX, Azure DevOps CSV
 - 🔗 Confluence integráció: oldalak közvetlen importálása
 - 📎 Több dokumentum támogatás: specifikáció + kiegészítő dokumentum + meglévő tesztesetek
@@ -85,5 +88,6 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.6.0 | ✅ Kész | Login, authentikáció, admin panel, concurrent session limit, usage logging, több dokumentum feltöltés, meglévő tesztesetek bővítése |
 | v0.7.0 | ✅ Kész | Confluence API integráció, oldalkiválasztó modal, több oldal támogatás |
 | v0.8.0 | ✅ Kész | Dokumentum struktúra elemzés, téma kiválasztás, chunking támogatás, landing page csomagokkal |
-| v0.9.0 | ⏳ Tervezett | Playwright alapú oldal feltérképezés (publikus appok) |
+| v0.9.0 | ⏳ Tervezett | UX refaktor, progressive disclosure workflow, Playwright placeholder, felhasználónkénti funkció láthatóság |
+| v0.10.0 | ⏳ Tervezett | Playwright UI feltérképezés (publikus appok), TestRail és Xray export |
 | v1.0.0 | ⏳ Tervezett | Domain, éles deployment |
