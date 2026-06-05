@@ -192,6 +192,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [user, sessionToken, touchSession]);
 
+  // Real-time: keep profile in sync when admin changes per-user settings
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`profile-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${user.id}` },
+        (payload) => {
+          setProfile((prev) => prev ? { ...prev, ...(payload.new as UserProfile) } : prev);
+        }
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [user]);
+
   const signIn = useCallback(async (email: string, password: string) => {
     console.log("[Auth] signIn called for:", email);
     try {

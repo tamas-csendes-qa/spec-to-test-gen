@@ -64,6 +64,16 @@ Deno.serve(async (req: Request) => {
     const { data: { user } } = await callerClient.auth.getUser();
     if (!user) return jsonError("Unauthorized", 401);
 
+    // Verify confluence is enabled for this user
+    const { data: userProfile } = await callerClient
+      .from("users")
+      .select("confluence_enabled")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (!userProfile?.confluence_enabled) {
+      return jsonError("Confluence access is not enabled for this account", 403);
+    }
+
     const body = await req.json() as {
       action: "save_connection" | "get_connection" | "list_children" | "get_page_content" | "get_pages_content";
       confluence_url?: string;

@@ -12,6 +12,7 @@ import {
   LogOut,
   X,
   ChevronDown,
+  Check,
 } from "lucide-react";
 import { logUsage, touchSessionByToken, getMonthlyUsageCount } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -25,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import * as pdfjsLib from "pdfjs-dist";
 import * as XLSX from "xlsx";
@@ -36,6 +36,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.j
 type Format = "gherkin" | "zephyr" | "azurecsv";
 type Lang = "hu" | "en";
 type TabType = "quick" | "keyword" | "userstory";
+type KeywordMode = "new" | "expand";
 
 interface TestCase {
   id: string;
@@ -61,23 +62,43 @@ interface AzureTestCase {
   steps: { action: string; expected: string }[];
 }
 
-interface TabState {
-  format: Format;
-  gherkinResult: string | null;
-  testCases: TestCase[] | null;
-  keywordSteps: KeywordStep[] | null;
-  azureCases: AzureTestCase[] | null;
-}
-
 interface DocTopic {
   id: string;
   title: string;
   pages: string;
 }
 
+interface ResultState {
+  gherkinResult: string | null;
+  testCases: TestCase[] | null;
+  keywordSteps: KeywordStep[] | null;
+  azureCases: AzureTestCase[] | null;
+}
+
+const TYPE_DEFAULT_FORMAT: Record<TabType, Format> = {
+  quick: "gherkin",
+  keyword: "zephyr",
+  userstory: "gherkin",
+};
+
 const STRINGS = {
   hu: {
     subtitle: "A specifikáció értelmezése a mi dolgunk.",
+    step1Title: "Teszteset típusa",
+    step2Title: "Generálási mód",
+    step3Title: "Forrás kiválasztása",
+    step4Title: "Formátum és generálás",
+    quickTest: "Gyors teszt",
+    quickTestDesc: "1-2 lépéses áttekintő tesztesetek",
+    keyword: "Kulcsszavas",
+    keywordDesc: "Részletes, automatizálásra kész tesztesetek",
+    userStory: "Felhasználói igény",
+    userStoryDesc: "Felhasználói igény alapú tesztesetek",
+    modeNew: "Új tesztesetek generálása",
+    modeExpand: "Meglévő tesztesetek kibővítése",
+    typeLabel: "Típus",
+    modeLabel: "Mód",
+    change: "Módosítás",
     specLabel: "Specifikáció",
     dropHere: "Húzd ide a specifikációt",
     dropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX · max 50 MB",
@@ -85,24 +106,21 @@ const STRINGS = {
     secondaryLabel: "Kiegészítő dokumentum (opcionális)",
     secondaryDropHere: "Húzd ide a kiegészítő dokumentumot",
     secondaryDropHint: "vagy kattints a tallózáshoz · PDF, DOCX, XLSX",
-    existingTcLabel: "Meglévő tesztesetek (opcionális)",
+    existingTcLabel: "Meglévő tesztesetek",
+    existingTcRequired: "Meglévő tesztesetek (kötelező)",
     existingTcDropHere: "Húzd ide a meglévő teszteseteket",
     existingTcDropHint: "vagy kattints a tallózáshoz · XLSX, CSV, DOCX, PDF",
     formatLabel: "Kimeneti formátum",
     generate: "Tesztesetek generálása",
     generating: "Generálás folyamatban…",
-    result: "Eredmény",
     download: "Letöltés",
     downloadFile: "Fájl letöltése",
-    footer: "QAgen v0.8.0",
+    footer: "QAgen v0.9.0",
     toggleLang: "Nyelv váltása",
     toggleDark: "Sötét mód váltása",
     error: "Hiba",
     fileProcessingError: "Nem sikerült feldolgozni a fájlt",
     fileTooLarge: "A fájl mérete meghaladja az 50 MB-os korlátot.",
-    quickTest: "Gyors teszt",
-    keyword: "Kulcsszavas",
-    userStory: "Felhasználói igény",
     userStoryPlaceholder: "Írd be a felhasználói igényt…",
     areaPath: "Area Path (opcionális)",
     areaPathPlaceholder: "pl. MyProject\\Team",
@@ -113,7 +131,6 @@ const STRINGS = {
     steps: "Lépések",
     expectedResult: "Elvárt eredmény",
     priority: "Prioritás",
-    noResult: "Nincs eredmény még",
     showPreview: "Előnézet megjelenítése",
     hidePreview: "Előnézet elrejtése",
     monthlyLimitReached: "Elérted a havi generálási limitedet. Kérjük lépj kapcsolatba az adminisztrátorral.",
@@ -129,9 +146,30 @@ const STRINGS = {
     chunkProgress: (current: number, total: number) => `Feldolgozás: ${current}/${total} rész – kérjük várjon…`,
     noTopicsFound: "Nem találhatók témakörök a dokumentumban.",
     page: "oldal",
+    playwrightSectionTitle: "Alkalmazás URL-ek (opcionális)",
+    playwrightSectionDesc: "Add meg azokat az oldalakat amelyeket feltérképezzünk",
+    playwrightAdd: "Hozzáadás",
+    playwrightPlaceholder: "https://myapp.example.com",
+    playwrightNote: "A megadott oldalak tartalmát feltérképezzük és felhasználjuk a tesztesetek generálásához. Csak nyilvánosan elérhető oldalak támogatottak.",
+    playwrightInvalidUrl: "Érvénytelen URL. Az URL-nek http:// vagy https://-szel kell kezdődnie.",
   },
   en: {
     subtitle: "Specification analysis is our business.",
+    step1Title: "Test case type",
+    step2Title: "Generation mode",
+    step3Title: "Select source",
+    step4Title: "Format and generate",
+    quickTest: "Quick Test",
+    quickTestDesc: "1-2 step overview test cases",
+    keyword: "Keyword",
+    keywordDesc: "Detailed, automation-ready test cases",
+    userStory: "User Story",
+    userStoryDesc: "User story based test cases",
+    modeNew: "Generate new test cases",
+    modeExpand: "Expand existing test cases",
+    typeLabel: "Type",
+    modeLabel: "Mode",
+    change: "Change",
     specLabel: "Specification",
     dropHere: "Drop the specification here",
     dropHint: "or click to browse · PDF, DOCX, XLSX · max 50 MB",
@@ -139,24 +177,21 @@ const STRINGS = {
     secondaryLabel: "Additional document (optional)",
     secondaryDropHere: "Drop the additional document here",
     secondaryDropHint: "or click to browse · PDF, DOCX, XLSX",
-    existingTcLabel: "Existing test cases (optional)",
+    existingTcLabel: "Existing test cases",
+    existingTcRequired: "Existing test cases (required)",
     existingTcDropHere: "Drop the existing test cases here",
     existingTcDropHint: "or click to browse · XLSX, CSV, DOCX, PDF",
     formatLabel: "Output format",
     generate: "Generate test cases",
     generating: "Generating…",
-    result: "Result",
     download: "Download",
     downloadFile: "Download file",
-    footer: "QAgen v0.8.0",
+    footer: "QAgen v0.9.0",
     toggleLang: "Switch language",
     toggleDark: "Toggle dark mode",
     error: "Error",
     fileProcessingError: "Failed to process file",
     fileTooLarge: "File size exceeds the 50 MB limit.",
-    quickTest: "Quick Test",
-    keyword: "Keyword",
-    userStory: "User Story",
     userStoryPlaceholder: "Enter your user story…",
     areaPath: "Area Path (optional)",
     areaPathPlaceholder: "e.g. MyProject\\Team",
@@ -167,7 +202,6 @@ const STRINGS = {
     steps: "Steps",
     expectedResult: "Expected Result",
     priority: "Priority",
-    noResult: "No result yet",
     showPreview: "Show preview",
     hidePreview: "Hide preview",
     monthlyLimitReached: "You have reached your monthly generation limit. Please contact your administrator.",
@@ -183,12 +217,17 @@ const STRINGS = {
     chunkProgress: (current: number, total: number) => `Processing: ${current}/${total} parts – please wait…`,
     noTopicsFound: "No topics found in the document.",
     page: "page",
+    playwrightSectionTitle: "Application URLs (optional)",
+    playwrightSectionDesc: "Add the pages you want to map",
+    playwrightAdd: "Add",
+    playwrightPlaceholder: "https://myapp.example.com",
+    playwrightNote: "The provided pages will be mapped and used for test case generation. Only publicly accessible pages are supported.",
+    playwrightInvalidUrl: "Invalid URL. The URL must start with http:// or https://",
   },
 } as const;
 
 const ACCEPT = ".pdf,.docx,.xlsx";
-
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 async function extractTextFromFile(file: File): Promise<string> {
   const filename = file.name.toLowerCase();
@@ -309,7 +348,6 @@ async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
   ];
 
   testCases.forEach((tc) => ws.addRow(tc));
-
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
 
@@ -334,7 +372,6 @@ async function buildKeywordExcelBlob(steps: KeywordStep[]): Promise<Blob> {
   ];
 
   steps.forEach((s) => ws.addRow(s));
-
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
 
@@ -382,8 +419,6 @@ function tryParseJson<T>(candidate: string): T | null {
   try {
     return JSON.parse(candidate) as T;
   } catch {
-    // Attempt truncation recovery: find the last complete object by trimming after the last `}`
-    // then close the array. Handles responses cut off mid-stream.
     const lastBrace = candidate.lastIndexOf("}");
     if (lastBrace === -1) return null;
     try {
@@ -394,10 +429,7 @@ function tryParseJson<T>(candidate: string): T | null {
   }
 }
 
-function parseTabResult(
-  raw: string,
-  format: Format
-): Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases"> {
+function parseTabResult(raw: string, format: Format): ResultState {
   if (format === "gherkin") {
     return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
   }
@@ -447,6 +479,8 @@ interface QAgenProps {
   isAdmin?: boolean;
   userEmail?: string;
   monthlyGenerationLimit?: number;
+  playwrightEnabled?: boolean;
+  confluenceEnabled?: boolean;
   onAdminClick?: () => void;
   onSignOut?: () => void;
 }
@@ -458,41 +492,53 @@ export function QAgen({
   isAdmin,
   userEmail,
   monthlyGenerationLimit = 100,
+  playwrightEnabled = false,
+  confluenceEnabled = false,
   onAdminClick,
   onSignOut,
 }: QAgenProps = {}) {
+  // Core UI
   const [dark, setDark] = useState(false);
+  const [lang, setLang] = useState<Lang>("hu");
+
+  // Step 1 – type selection
+  const [selectedType, setSelectedType] = useState<TabType | null>(null);
+  const [step1Collapsed, setStep1Collapsed] = useState(false);
+
+  // Step 2 – keyword mode (only for keyword type)
+  const [keywordMode, setKeywordMode] = useState<KeywordMode | null>(null);
+  const [step2Collapsed, setStep2Collapsed] = useState(false);
+
+  // Step 3 – sources
   const [file, setFile] = useState<File | null>(null);
   const [secondaryFile, setSecondaryFile] = useState<File | null>(null);
-  const [lang, setLang] = useState<Lang>("hu");
-  const [activeTab, setActiveTab] = useState<TabType>("quick");
-  const [loading, setLoading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const [dragOverSecondary, setDragOverSecondary] = useState(false);
   const [existingTcFile, setExistingTcFile] = useState<File | null>(null);
-  const [dragOverExistingTc, setDragOverExistingTc] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [userStoryText, setUserStoryText] = useState("");
-  const [areaPath, setAreaPath] = useState("");
-  const [tabStates, setTabStates] = useState<Record<TabType, TabState>>({
-    quick: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
-    keyword: { format: "zephyr", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
-    userstory: { format: "gherkin", gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null },
-  });
-  const [previewOpen, setPreviewOpen] = useState<Record<TabType, boolean>>({
-    quick: false,
-    keyword: false,
-    userstory: false,
-  });
-  const [monthlyCount, setMonthlyCount] = useState<number>(0);
+  const [playwrightUrls, setPlaywrightUrls] = useState<string[]>([]);
+  const [playwrightUrlInput, setPlaywrightUrlInput] = useState("");
+  const [playwrightUrlError, setPlaywrightUrlError] = useState<string | null>(null);
   const [confluencePages, setConfluencePages] = useState<ConfluencePage[]>([]);
   const [showConfluenceModal, setShowConfluenceModal] = useState(false);
-  // Analysis state
+  const [dragOver, setDragOver] = useState(false);
+  const [dragOverSecondary, setDragOverSecondary] = useState(false);
+  const [dragOverExistingTc, setDragOverExistingTc] = useState(false);
+
+  // Analysis
   const [docTopics, setDocTopics] = useState<DocTopic[]>([]);
   const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(new Set());
   const [analysing, setAnalysing] = useState(false);
   const [structureOpen, setStructureOpen] = useState(false);
+
+  // Step 4 – format & generate
+  const [format, setFormat] = useState<Format>("gherkin");
+  const [areaPath, setAreaPath] = useState("");
+  const [loading, setLoading] = useState(false);
   const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ResultState | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [monthlyCount, setMonthlyCount] = useState<number>(0);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
   const existingTcInputRef = useRef<HTMLInputElement>(null);
@@ -525,8 +571,91 @@ export function QAgen({
 
   const t = STRINGS[lang];
 
-  const updateTabState = (tab: TabType, updates: Partial<TabState>) =>
-    setTabStates((prev) => ({ ...prev, [tab]: { ...prev[tab], ...updates } }));
+  // ── Navigation helpers ──────────────────────────────────────────────────────
+
+  const resetSources = () => {
+    setFile(null);
+    setSecondaryFile(null);
+    setExistingTcFile(null);
+    setUserStoryText("");
+    setPlaywrightUrls([]);
+    setPlaywrightUrlInput("");
+    setPlaywrightUrlError(null);
+    setDocTopics([]);
+    setSelectedTopicIds(new Set());
+    setStructureOpen(false);
+  };
+
+  const handleSelectType = (type: TabType) => {
+    const changed = type !== selectedType;
+    setSelectedType(type);
+    setStep1Collapsed(true);
+    if (changed) {
+      setKeywordMode(null);
+      setStep2Collapsed(false);
+      resetSources();
+      setResult(null);
+      setError(null);
+      setFormat(TYPE_DEFAULT_FORMAT[type]);
+    }
+  };
+
+  const handleSelectKeywordMode = (mode: KeywordMode) => {
+    const changed = mode !== keywordMode;
+    setKeywordMode(mode);
+    setStep2Collapsed(true);
+    if (changed) {
+      resetSources();
+      setResult(null);
+      setError(null);
+    }
+  };
+
+  // ── Derived state ───────────────────────────────────────────────────────────
+
+  const step1Done = step1Collapsed && selectedType !== null;
+  const step2Visible = step1Done && selectedType === "keyword";
+  const step2Done = !step2Visible || (step2Collapsed && keywordMode !== null);
+  const sourcesVisible = step1Done && step2Done;
+
+  const stepNums = {
+    sources: selectedType === "keyword" ? 3 : 2,
+    format: selectedType === "keyword" ? 4 : 3,
+  };
+
+  const typeLabel = (type: TabType) =>
+    type === "quick" ? t.quickTest : type === "keyword" ? t.keyword : t.userStory;
+
+  const modeLabel = (mode: KeywordMode) =>
+    mode === "new" ? t.modeNew : t.modeExpand;
+
+  const hasResult = () =>
+    !!(result?.gherkinResult || result?.testCases || result?.keywordSteps || result?.azureCases);
+
+  const canGenerate = (): boolean => {
+    if (!selectedType || !sourcesVisible) return false;
+    const hasConfluence = confluencePages.length > 0;
+    if (selectedType === "userstory") return !!userStoryText.trim() || !!file || hasConfluence;
+    if (selectedType === "keyword" && keywordMode === "expand") return !!existingTcFile && (!!file || hasConfluence);
+    return !!file || hasConfluence;
+  };
+
+  const canAnalyseDoc = () =>
+    (selectedType === "quick" || selectedType === "keyword") && (!!file || confluencePages.length > 0);
+
+  const addPlaywrightUrl = () => {
+    const url = playwrightUrlInput.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      setPlaywrightUrlError(t.playwrightInvalidUrl);
+      return;
+    }
+    setPlaywrightUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
+    setPlaywrightUrlInput("");
+    setPlaywrightUrlError(null);
+  };
+
+  // ── File handlers ───────────────────────────────────────────────────────────
 
   const onPick = (f: File | null) => {
     if (!f || !/\.(pdf|docx|xlsx)$/i.test(f.name)) return;
@@ -568,21 +697,10 @@ export function QAgen({
     onPickExistingTc(e.dataTransfer.files?.[0] ?? null);
   };
 
-  const canGenerate = (tab: TabType) => {
-    const hasConfluence = confluencePages.length > 0;
-    if (tab === "userstory") return !!userStoryText.trim() || !!file;
-    if (tab === "keyword") return !!file || !!existingTcFile || hasConfluence;
-    return !!file || hasConfluence;
-  };
+  // ── Analysis ────────────────────────────────────────────────────────────────
 
-  const hasResult = (state: TabState) =>
-    !!(state.gherkinResult || state.testCases || state.keywordSteps || state.azureCases);
-
-  const canAnalyse = (tab: TabType) =>
-    (tab === "quick" || tab === "keyword") && (!!file || confluencePages.length > 0);
-
-  const analyseDocument = async (tab: TabType) => {
-    if (!canAnalyse(tab)) return;
+  const analyseDocument = async () => {
+    if (!canAnalyseDoc()) return;
     setAnalysing(true);
     setError(null);
     try {
@@ -607,7 +725,7 @@ export function QAgen({
       if (!textToAnalyse) return;
       const topics = await callAnalyseAPI(textToAnalyse, lang);
       setDocTopics(topics);
-      setSelectedTopicIds(new Set(topics.map((t) => t.id)));
+      setSelectedTopicIds(new Set(topics.map((tp) => tp.id)));
       setStructureOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
@@ -630,14 +748,12 @@ export function QAgen({
     return extracted.trim() || fullText;
   };
 
-  // Split text into chunks of roughly chunkSize characters
   const splitIntoChunks = (text: string, chunkSize: number): string[] => {
     const chunks: string[] = [];
     let start = 0;
     while (start < text.length) {
       let end = start + chunkSize;
       if (end < text.length) {
-        // Try to break at a paragraph boundary
         const breakAt = text.lastIndexOf("\n\n", end);
         if (breakAt > start) end = breakAt;
       }
@@ -647,9 +763,9 @@ export function QAgen({
     return chunks.filter(Boolean);
   };
 
-  const CHUNK_CHAR_SIZE = 200_000; // ~100 pages worth of text
+  const CHUNK_CHAR_SIZE = 200_000;
 
-  const mergeResults = (results: Array<Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases">>): Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases"> => {
+  const mergeResults = (results: ResultState[]): ResultState => {
     const allKeywordSteps = results.flatMap((r) => r.keywordSteps ?? []);
     if (allKeywordSteps.length > 0) return { gherkinResult: null, testCases: null, keywordSteps: allKeywordSteps, azureCases: null };
     const allTestCases = results.flatMap((r) => r.testCases ?? []);
@@ -660,8 +776,11 @@ export function QAgen({
     return { gherkinResult: gherkin || null, testCases: null, keywordSteps: null, azureCases: null };
   };
 
-  const generate = async (tab: TabType, fromSelectedTopics = false) => {
-    const state = tabStates[tab];
+  // ── Generation ──────────────────────────────────────────────────────────────
+
+  const generate = async (fromSelectedTopics = false) => {
+    if (!selectedType) return;
+    const tab = selectedType;
 
     let inputText: string | null = null;
     if (tab === "userstory" && userStoryText.trim()) {
@@ -673,7 +792,7 @@ export function QAgen({
         setError(err instanceof Error ? err.message : t.fileProcessingError);
         return;
       }
-    } else if (tab === "keyword" && existingTcFile) {
+    } else if (tab === "keyword" && existingTcFile && !file) {
       inputText = "";
     } else if (confluencePages.length > 0) {
       inputText = "";
@@ -690,6 +809,10 @@ export function QAgen({
         return;
       }
     }
+    if (playwrightUrls.length > 0 && tab !== "userstory") {
+      const urlNote = `\n\n[Playwright URLs]\n${playwrightUrls.join("\n")}`;
+      secondaryText = (secondaryText ?? "") + urlNote;
+    }
 
     let existingTcText: string | undefined;
     if (existingTcFile && tab === "keyword") {
@@ -701,7 +824,6 @@ export function QAgen({
       }
     }
 
-    // Fetch Confluence page contents if any are selected
     let confluenceText: string | undefined;
     if (confluencePages.length > 0 && userId) {
       try {
@@ -721,11 +843,10 @@ export function QAgen({
           }
         }
       } catch {
-        // Non-fatal: proceed without confluence content
+        // Non-fatal
       }
     }
 
-    // Enforce monthly limit (0 = unlimited)
     if (userId && monthlyGenerationLimit > 0) {
       const currentCount = await getMonthlyUsageCount(userId);
       if (currentCount >= monthlyGenerationLimit) {
@@ -739,62 +860,57 @@ export function QAgen({
     setChunkProgress(null);
 
     try {
-      // Determine the effective document text (file or confluence)
       const fullDocText = inputText || confluenceText || "";
 
-      // Topic-based generation (only for quick/keyword with analysis done)
-      if (fromSelectedTopics && docTopics.length > 0 && (tab === "quick" || tab === "keyword")) {
+      if (fromSelectedTopics && docTopics.length > 0) {
         const selected = docTopics.filter((topic) => selectedTopicIds.has(topic.id));
-
         if (selected.length === 0) {
           setError(lang === "hu" ? "Kérjük jelölj ki legalább egy témát" : "Please select at least one topic");
           setLoading(false);
           return;
         }
-
-        // Use Claude to extract only the sections matching the selected topics
-        const filteredText = await extractSectionsViaClaude(fullDocText, selected.map((t) => t.title));
+        const filteredText = await extractSectionsViaClaude(fullDocText, selected.map((tp) => tp.title));
         const effectiveInput = confluencePages.length > 0 ? "" : filteredText;
         const effectiveConfluence = confluencePages.length > 0 ? filteredText : confluenceText;
-
-        const { result: raw, token_count } = await callClaudeAPI(effectiveInput, state.format, lang, tab, secondaryText, existingTcText, effectiveConfluence);
-        updateTabState(tab, parseTabResult(raw, state.format));
+        const { result: raw, token_count } = await callClaudeAPI(effectiveInput, format, lang, tab, secondaryText, existingTcText, effectiveConfluence);
+        setResult(parseTabResult(raw, format));
+        setPreviewOpen(true);
         if (userId) {
-          void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
+          void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: token_count });
           if (sessionToken) void touchSessionByToken(userId, sessionToken);
           void getMonthlyUsageCount(userId).then(setMonthlyCount);
         }
       } else {
-        // No topic selection — check if chunking is needed based on text size
-        const textForChunkCheck = fullDocText;
-        const needsChunking = textForChunkCheck.length > CHUNK_CHAR_SIZE;
+        const needsChunking = fullDocText.length > CHUNK_CHAR_SIZE;
 
         if (needsChunking && (tab === "quick" || tab === "keyword")) {
-          const chunks = splitIntoChunks(textForChunkCheck, CHUNK_CHAR_SIZE);
+          const chunks = splitIntoChunks(fullDocText, CHUNK_CHAR_SIZE);
           const total = chunks.length;
-          const chunkResults: Array<Pick<TabState, "gherkinResult" | "testCases" | "keywordSteps" | "azureCases">> = [];
+          const chunkResults: ResultState[] = [];
           let totalTokens = 0;
 
           for (let i = 0; i < chunks.length; i++) {
             setChunkProgress({ current: i + 1, total });
             const chunkText = confluencePages.length > 0 ? "" : chunks[i];
             const chunkConfluence = confluencePages.length > 0 ? chunks[i] : confluenceText;
-            const { result: raw, token_count } = await callClaudeAPI(chunkText, state.format, lang, tab, secondaryText, existingTcText, chunkConfluence);
-            chunkResults.push(parseTabResult(raw, state.format));
+            const { result: raw, token_count } = await callClaudeAPI(chunkText, format, lang, tab, secondaryText, existingTcText, chunkConfluence);
+            chunkResults.push(parseTabResult(raw, format));
             totalTokens += token_count;
           }
 
-          updateTabState(tab, mergeResults(chunkResults));
+          setResult(mergeResults(chunkResults));
+          setPreviewOpen(true);
           if (userId) {
-            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: totalTokens });
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: totalTokens });
             if (sessionToken) void touchSessionByToken(userId, sessionToken);
             void getMonthlyUsageCount(userId).then(setMonthlyCount);
           }
         } else {
-          const { result: raw, token_count } = await callClaudeAPI(inputText, state.format, lang, tab, secondaryText, existingTcText, confluenceText);
-          updateTabState(tab, parseTabResult(raw, state.format));
+          const { result: raw, token_count } = await callClaudeAPI(inputText, format, lang, tab, secondaryText, existingTcText, confluenceText);
+          setResult(parseTabResult(raw, format));
+          setPreviewOpen(true);
           if (userId) {
-            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: state.format, tokenCount: token_count });
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: token_count });
             if (sessionToken) void touchSessionByToken(userId, sessionToken);
             void getMonthlyUsageCount(userId).then(setMonthlyCount);
           }
@@ -808,22 +924,23 @@ export function QAgen({
     }
   };
 
-  const downloadResult = async (tab: TabType) => {
-    const state = tabStates[tab];
+  const downloadResult = async () => {
+    if (!result) return;
     const date = todayStr();
-
-    if (state.keywordSteps) {
-      const blob = await buildKeywordExcelBlob(state.keywordSteps);
+    if (result.keywordSteps) {
+      const blob = await buildKeywordExcelBlob(result.keywordSteps);
       triggerDownloadBlob(blob, `qagen-keyword-${date}.xlsx`);
-    } else if (state.testCases) {
-      const blob = await buildExcelBlob(state.testCases);
+    } else if (result.testCases) {
+      const blob = await buildExcelBlob(result.testCases);
       triggerDownloadBlob(blob, `qagen-zephyr-${date}.xlsx`);
-    } else if (state.azureCases) {
-      triggerDownloadText(buildAzureCsv(state.azureCases, areaPath), `qagen-azure-${date}.csv`, "text/csv;charset=utf-8");
-    } else if (state.gherkinResult) {
-      triggerDownloadText(state.gherkinResult, `qagen-gherkin-${date}.txt`, "text/plain;charset=utf-8");
+    } else if (result.azureCases) {
+      triggerDownloadText(buildAzureCsv(result.azureCases, areaPath), `qagen-azure-${date}.csv`, "text/csv;charset=utf-8");
+    } else if (result.gherkinResult) {
+      triggerDownloadText(result.gherkinResult, `qagen-gherkin-${date}.txt`, "text/plain;charset=utf-8");
     }
   };
+
+  // ── Upload zones ────────────────────────────────────────────────────────────
 
   const PrimaryUploadZone = () => (
     <div
@@ -863,11 +980,7 @@ export function QAgen({
           {t.secondaryLabel}
         </label>
         {secondaryFile && (
-          <button
-            type="button"
-            onClick={() => setSecondaryFile(null)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-          >
+          <button type="button" onClick={() => setSecondaryFile(null)} className="text-xs text-muted-foreground hover:text-destructive transition-colors">
             <X className="h-3.5 w-3.5" />
           </button>
         )}
@@ -879,12 +992,7 @@ export function QAgen({
             <p className="font-mono text-sm truncate">{secondaryFile.name}</p>
             <p className="text-xs text-muted-foreground">{(secondaryFile.size / 1024).toFixed(1)} KB</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setSecondaryFile(null)}
-            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-            aria-label="Remove secondary document"
-          >
+          <button type="button" onClick={() => setSecondaryFile(null)} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors" aria-label="Remove">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -898,13 +1006,7 @@ export function QAgen({
             dragOverSecondary ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
           }`}
         >
-          <input
-            ref={secondaryInputRef}
-            type="file"
-            accept={ACCEPT}
-            className="hidden"
-            onChange={(e) => onPickSecondary(e.target.files?.[0] ?? null)}
-          />
+          <input ref={secondaryInputRef} type="file" accept={ACCEPT} className="hidden" onChange={(e) => onPickSecondary(e.target.files?.[0] ?? null)} />
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Upload className="h-4 w-4 group-hover:text-primary transition-colors" />
             <span className="text-sm">{t.secondaryDropHere}</span>
@@ -919,14 +1021,10 @@ export function QAgen({
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          {t.existingTcLabel}
+          {t.existingTcRequired}
         </label>
         {existingTcFile && (
-          <button
-            type="button"
-            onClick={() => setExistingTcFile(null)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-          >
+          <button type="button" onClick={() => setExistingTcFile(null)} className="text-xs text-muted-foreground hover:text-destructive transition-colors">
             <X className="h-3.5 w-3.5" />
           </button>
         )}
@@ -938,12 +1036,7 @@ export function QAgen({
             <p className="font-mono text-sm truncate">{existingTcFile.name}</p>
             <p className="text-xs text-muted-foreground">{(existingTcFile.size / 1024).toFixed(1)} KB</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setExistingTcFile(null)}
-            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-            aria-label="Remove existing test cases"
-          >
+          <button type="button" onClick={() => setExistingTcFile(null)} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors" aria-label="Remove">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -957,13 +1050,7 @@ export function QAgen({
             dragOverExistingTc ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
           }`}
         >
-          <input
-            ref={existingTcInputRef}
-            type="file"
-            accept=".pdf,.docx,.xlsx,.csv"
-            className="hidden"
-            onChange={(e) => onPickExistingTc(e.target.files?.[0] ?? null)}
-          />
+          <input ref={existingTcInputRef} type="file" accept=".pdf,.docx,.xlsx,.csv" className="hidden" onChange={(e) => onPickExistingTc(e.target.files?.[0] ?? null)} />
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Upload className="h-4 w-4 group-hover:text-primary transition-colors" />
             <span className="text-sm">{t.existingTcDropHere}</span>
@@ -973,6 +1060,8 @@ export function QAgen({
       )}
     </div>
   );
+
+  // ── Preview components ──────────────────────────────────────────────────────
 
   const GherkinPreview = ({ text }: { text: string }) => {
     const lines = text.split("\n");
@@ -1002,15 +1091,12 @@ export function QAgen({
     );
   };
 
-  const KeywordPreview = ({ steps, onDownload }: { steps: KeywordStep[]; onDownload: () => void }) => {
+  const KeywordPreview = ({ steps }: { steps: KeywordStep[] }) => {
     const groups: { id: string; name: string; priority: string; steps: KeywordStep[] }[] = [];
     for (const s of steps) {
       const existing = groups.find((g) => g.id === s.id);
-      if (existing) {
-        existing.steps.push(s);
-      } else {
-        groups.push({ id: s.id, name: s.name, priority: s.priority, steps: [s] });
-      }
+      if (existing) existing.steps.push(s);
+      else groups.push({ id: s.id, name: s.name, priority: s.priority, steps: [s] });
     }
     return (
       <div className="space-y-3">
@@ -1044,15 +1130,11 @@ export function QAgen({
             </div>
           </div>
         ))}
-        <Button onClick={onDownload} className="w-full mt-1" size="sm">
-          <Download className="h-4 w-4" />
-          {t.downloadFile}
-        </Button>
       </div>
     );
   };
 
-  const ZephyrPreview = ({ cases, onDownload }: { cases: TestCase[]; onDownload: () => void }) => (
+  const ZephyrPreview = ({ cases }: { cases: TestCase[] }) => (
     <div className="space-y-3">
       {cases.map((tc, idx) => (
         <div key={idx} className="rounded-lg border border-border bg-card overflow-hidden">
@@ -1087,14 +1169,10 @@ export function QAgen({
           </div>
         </div>
       ))}
-      <Button onClick={onDownload} className="w-full mt-1" size="sm">
-        <Download className="h-4 w-4" />
-        {t.downloadFile}
-      </Button>
     </div>
   );
 
-  const AzurePreview = ({ cases, onDownload }: { cases: AzureTestCase[]; onDownload: () => void }) => (
+  const AzurePreview = ({ cases }: { cases: AzureTestCase[] }) => (
     <div className="space-y-3">
       {cases.map((tc, tcIdx) => (
         <div key={tcIdx} className="rounded-lg border border-border bg-card overflow-hidden">
@@ -1114,317 +1192,35 @@ export function QAgen({
           </div>
         </div>
       ))}
-      <Button onClick={onDownload} className="w-full mt-1" size="sm">
-        <Download className="h-4 w-4" />
-        {t.downloadFile}
-      </Button>
     </div>
   );
 
-  const renderTabPanel = (tab: TabType) => {
-    const state = tabStates[tab];
-    const isActive = activeTab === tab;
-    const isGenerating = loading && isActive;
-    const resultReady = hasResult(state);
-    const showSecondary = tab === "quick" || tab === "keyword";
-    const isPreviewOpen = previewOpen[tab];
+  // ── Step summary row ────────────────────────────────────────────────────────
 
-    return (
-      <div className="space-y-5">
-        {/* Input section */}
-        {tab === "userstory" ? (
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-                {t.fileLabel}
-              </label>
-              <PrimaryUploadZone />
-            </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <div className="flex-1 border-t border-border" />
-              <span>{t.orSeparator}</span>
-              <div className="flex-1 border-t border-border" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-                {t.textInputLabel}
-              </label>
-              <Textarea
-                value={userStoryText}
-                onChange={(e) => setUserStoryText(e.target.value)}
-                placeholder={t.userStoryPlaceholder}
-                className="min-h-[100px] resize-y font-mono text-sm"
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-                {t.specLabel}
-              </label>
-              <PrimaryUploadZone />
-            </div>
-            {showSecondary && <SecondaryUploadZone />}
-            {tab === "keyword" && <ExistingTcUploadZone />}
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowConfluenceModal(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                <span className="text-base leading-none">📄</span>
-                {confluencePages.length > 0
-                  ? `Confluence (${confluencePages.length})`
-                  : t.confluencePages}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Format selector */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-            {t.formatLabel}
-          </label>
-          <Select
-            value={state.format}
-            onValueChange={(v) => updateTabState(tab, { format: v as Format, gherkinResult: null, testCases: null, keywordSteps: null, azureCases: null })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="gherkin">Gherkin</SelectItem>
-              <SelectItem value="zephyr">Zephyr XLSX</SelectItem>
-              <SelectItem value="azurecsv">Azure DevOps CSV</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Area Path (Azure CSV only) */}
-        {state.format === "azurecsv" && (
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">
-              {t.areaPath}
-            </label>
-            <input
-              type="text"
-              value={areaPath}
-              onChange={(e) => setAreaPath(e.target.value)}
-              placeholder={t.areaPathPlaceholder}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div className="flex gap-2 flex-wrap">
-          {(tab === "quick" || tab === "keyword") && canAnalyse(tab) && (
-            <Button
-              variant="outline"
-              onClick={() => { void analyseDocument(tab); }}
-              disabled={analysing || isGenerating}
-              className="h-11 px-4 text-sm font-medium"
-            >
-              {analysing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t.analysing}
-                </>
-              ) : (
-                <>
-                  <span className="mr-1.5 text-base leading-none">📋</span>
-                  {t.analyse}
-                </>
-              )}
-            </Button>
-          )}
-          <Button
-            onClick={() => { void generate(tab); }}
-            disabled={!canGenerate(tab) || isGenerating || analysing}
-            className="flex-1 h-11 text-sm font-semibold"
-          >
-            {isGenerating && !chunkProgress ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t.generating}
-              </>
-            ) : isGenerating && chunkProgress ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t.chunkProgress(chunkProgress.current, chunkProgress.total)}
-              </>
-            ) : (
-              t.generate
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => { void downloadResult(tab); }}
-            disabled={!resultReady}
-            className="h-11 px-4 text-sm font-medium"
-            title={t.download}
-          >
-            <Download className="h-4 w-4" />
-            <span className="hidden sm:inline ml-1">{t.download}</span>
-          </Button>
-        </div>
-
-        {/* Chunk progress bar */}
-        {isGenerating && chunkProgress && (
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</span>
-              <span>{Math.round((chunkProgress.current / chunkProgress.total) * 100)}%</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all duration-500"
-                style={{ width: `${(chunkProgress.current / chunkProgress.total) * 100}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Document structure panel */}
-        {(tab === "quick" || tab === "keyword") && docTopics.length > 0 && isActive && (
-          <div className="rounded-lg border border-border bg-card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setStructureOpen((o) => !o)}
-              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <span className="flex items-center gap-2">
-                <span className="text-base leading-none">📋</span>
-                {t.docStructure}
-                <span className="text-xs text-muted-foreground font-normal">
-                  ({selectedTopicIds.size}/{docTopics.length})
-                </span>
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const allSelected = selectedTopicIds.size === docTopics.length;
-                    setSelectedTopicIds(allSelected ? new Set() : new Set(docTopics.map((t) => t.id)));
-                  }}
-                  className="text-xs text-primary hover:underline"
-                >
-                  {selectedTopicIds.size === docTopics.length ? t.deselectAll : t.selectAll}
-                </button>
-                <ChevronDown
-                  className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${structureOpen ? "rotate-180" : ""}`}
-                />
-              </div>
-            </button>
-
-            {structureOpen && (
-              <div className="border-t border-border divide-y divide-border">
-                {docTopics.map((topic) => (
-                  <label
-                    key={topic.id}
-                    className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedTopicIds.has(topic.id)}
-                      onChange={(e) => {
-                        setSelectedTopicIds((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(topic.id); else next.delete(topic.id);
-                          return next;
-                        });
-                      }}
-                      className="h-4 w-4 rounded border-border accent-primary"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium">{topic.id}. {topic.title}</span>
-                      {topic.pages && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({topic.pages}. {t.page})
-                        </span>
-                      )}
-                    </div>
-                  </label>
-                ))}
-                <div className="px-4 py-3">
-                  <Button
-                    onClick={() => { void generate(tab, true); }}
-                    disabled={selectedTopicIds.size === 0 || isGenerating || analysing}
-                    className="w-full h-10 text-sm font-semibold"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        {chunkProgress ? t.chunkProgress(chunkProgress.current, chunkProgress.total) : t.generating}
-                      </>
-                    ) : (
-                      t.generateFromSelected
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Error */}
-        {error && isActive && (
-          <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-4">
-            <div className="flex gap-3">
-              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-red-900 dark:text-red-200 text-sm">{t.error}</p>
-                <p className="text-xs text-red-800 dark:text-red-300 mt-1">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Collapsible preview */}
-        {resultReady && (
-          <div className="animate-fade-in">
-            <button
-              type="button"
-              onClick={() => setPreviewOpen((prev) => ({ ...prev, [tab]: !prev[tab] }))}
-              className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <span>{isPreviewOpen ? t.hidePreview : t.showPreview}</span>
-              <ChevronDown
-                className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isPreviewOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {isPreviewOpen && (
-              <div className="mt-3 space-y-3">
-                {state.keywordSteps ? (
-                  <KeywordPreview steps={state.keywordSteps} onDownload={() => { void downloadResult(tab); }} />
-                ) : state.testCases ? (
-                  <ZephyrPreview cases={state.testCases} onDownload={() => { void downloadResult(tab); }} />
-                ) : state.azureCases ? (
-                  <AzurePreview cases={state.azureCases} onDownload={() => { void downloadResult(tab); }} />
-                ) : state.gherkinResult ? (
-                  <>
-                    <GherkinPreview text={state.gherkinResult} />
-                    <Button onClick={() => { void downloadResult(tab); }} className="w-full mt-1" size="sm">
-                      <Download className="h-4 w-4" />
-                      {t.downloadFile}
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            )}
-          </div>
-        )}
+  const StepSummary = ({ label, value, onEdit }: { label: string; value: string; onEdit: () => void }) => (
+    <div className="flex items-center justify-between px-5 py-3.5">
+      <div className="flex items-center gap-3">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
+          <Check className="h-3 w-3" />
+        </span>
+        <span className="text-sm text-muted-foreground">{label}:</span>
+        <span className="text-sm font-semibold">{value}</span>
       </div>
-    );
-  };
+      <button
+        onClick={onEdit}
+        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+      >
+        {t.change}
+      </button>
+    </div>
+  );
+
+  // ── Main render ─────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen w-full">
       <div className="mx-auto max-w-3xl px-6 py-8 animate-fade-in">
+
         {/* Header */}
         <header className="flex items-center justify-between gap-4 mb-10">
           <div className="flex items-center gap-2">
@@ -1477,7 +1273,7 @@ export function QAgen({
           </div>
         </header>
 
-        {/* Monthly usage indicator */}
+        {/* Monthly usage */}
         {userId && (
           <div className="flex justify-end mb-4">
             <span className="text-xs text-muted-foreground">
@@ -1493,28 +1289,453 @@ export function QAgen({
           </div>
         )}
 
-        {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={(v) => { setActiveTab(v as TabType); setError(null); }}
-        >
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="quick">{t.quickTest}</TabsTrigger>
-            <TabsTrigger value="keyword">{t.keyword}</TabsTrigger>
-            <TabsTrigger value="userstory">{t.userStory}</TabsTrigger>
-          </TabsList>
+        <div className="space-y-3">
 
-          <TabsContent value="quick">{renderTabPanel("quick")}</TabsContent>
-          <TabsContent value="keyword">{renderTabPanel("keyword")}</TabsContent>
-          <TabsContent value="userstory">{renderTabPanel("userstory")}</TabsContent>
-        </Tabs>
+          {/* ── Step 1: Test type ─────────────────────────────────────────────── */}
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            {step1Done ? (
+              <StepSummary
+                label={t.typeLabel}
+                value={typeLabel(selectedType!)}
+                onEdit={() => setStep1Collapsed(false)}
+              />
+            ) : (
+              <div className="p-5 space-y-4">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  1. {t.step1Title}
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {(
+                    [
+                      { type: "quick" as TabType, title: t.quickTest, desc: t.quickTestDesc },
+                      { type: "keyword" as TabType, title: t.keyword, desc: t.keywordDesc },
+                      { type: "userstory" as TabType, title: t.userStory, desc: t.userStoryDesc },
+                    ] as const
+                  ).map(({ type, title, desc }) => (
+                    <button
+                      key={type}
+                      onClick={() => handleSelectType(type)}
+                      className={`relative flex flex-col gap-1.5 rounded-lg border-2 p-4 text-left transition-all ${
+                        selectedType === type
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/40 hover:bg-accent/40"
+                      }`}
+                    >
+                      {selectedType === type && (
+                        <span className="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                      <span className="font-semibold text-sm pr-5">{title}</span>
+                      <span className="text-xs text-muted-foreground leading-relaxed">{desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Step 2: Keyword mode ──────────────────────────────────────────── */}
+          {step2Visible && (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              {step2Done ? (
+                <StepSummary
+                  label={t.modeLabel}
+                  value={modeLabel(keywordMode!)}
+                  onEdit={() => setStep2Collapsed(false)}
+                />
+              ) : (
+                <div className="p-5 space-y-4">
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    2. {t.step2Title}
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {(
+                      [
+                        { mode: "new" as KeywordMode, title: t.modeNew },
+                        { mode: "expand" as KeywordMode, title: t.modeExpand },
+                      ] as const
+                    ).map(({ mode, title }) => (
+                      <button
+                        key={mode}
+                        onClick={() => handleSelectKeywordMode(mode)}
+                        className={`relative flex items-center gap-3 rounded-lg border-2 p-4 text-left transition-all ${
+                          keywordMode === mode
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-primary/40 hover:bg-accent/40"
+                        }`}
+                      >
+                        {keywordMode === mode && (
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
+                            <Check className="h-2.5 w-2.5" />
+                          </span>
+                        )}
+                        <span className="font-semibold text-sm">{title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 3: Sources ───────────────────────────────────────────────── */}
+          {sourcesVisible && (
+            <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {stepNums.sources}. {t.step3Title}
+              </h2>
+
+              {selectedType === "userstory" ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      {t.textInputLabel}
+                    </label>
+                    <Textarea
+                      value={userStoryText}
+                      onChange={(e) => setUserStoryText(e.target.value)}
+                      placeholder={t.userStoryPlaceholder}
+                      className="min-h-[100px] resize-y font-mono text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <div className="flex-1 border-t border-border" />
+                    <span>{t.orSeparator}</span>
+                    <div className="flex-1 border-t border-border" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      {t.fileLabel}
+                    </label>
+                    <PrimaryUploadZone />
+                  </div>
+                  {confluenceEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setShowConfluenceModal(true)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <span className="text-base leading-none">📄</span>
+                      {confluencePages.length > 0 ? `Confluence (${confluencePages.length})` : t.confluencePages}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {selectedType === "keyword" && keywordMode === "expand" && (
+                    <ExistingTcUploadZone />
+                  )}
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      {t.specLabel}
+                    </label>
+                    <PrimaryUploadZone />
+                  </div>
+                  {confluenceEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setShowConfluenceModal(true)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <span className="text-base leading-none">📄</span>
+                      {confluencePages.length > 0 ? `Confluence (${confluencePages.length})` : t.confluencePages}
+                    </button>
+                  )}
+                  <SecondaryUploadZone />
+                  {playwrightEnabled && (
+                    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          {t.playwrightSectionTitle}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{t.playwrightSectionDesc}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={playwrightUrlInput}
+                          onChange={(e) => { setPlaywrightUrlInput(e.target.value); setPlaywrightUrlError(null); }}
+                          onKeyDown={(e) => e.key === "Enter" && addPlaywrightUrl()}
+                          placeholder={t.playwrightPlaceholder}
+                          className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        />
+                        <button
+                          type="button"
+                          onClick={addPlaywrightUrl}
+                          className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                        >
+                          {t.playwrightAdd}
+                        </button>
+                      </div>
+                      {playwrightUrlError && (
+                        <p className="text-xs text-destructive">{playwrightUrlError}</p>
+                      )}
+                      {playwrightUrls.length > 0 && (
+                        <ul className="space-y-1.5">
+                          {playwrightUrls.map((url) => (
+                            <li key={url} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
+                              <span className="flex-1 truncate font-mono text-xs">{url}</span>
+                              <button
+                                type="button"
+                                onClick={() => setPlaywrightUrls((prev) => prev.filter((u) => u !== url))}
+                                className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                                aria-label="Remove URL"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-xs text-muted-foreground leading-relaxed">{t.playwrightNote}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Analyse button */}
+              {canAnalyseDoc() && (
+                <div>
+                  <Button
+                    variant="outline"
+                    onClick={() => { void analyseDocument(); }}
+                    disabled={analysing || loading}
+                    className="h-10 px-4 text-sm font-medium"
+                  >
+                    {analysing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {t.analysing}
+                      </>
+                    ) : (
+                      <>
+                        <span className="mr-1.5 text-base leading-none">📋</span>
+                        {t.analyse}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {/* Topic checklist */}
+              {docTopics.length > 0 && (
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setStructureOpen((o) => !o)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-base leading-none">📋</span>
+                      {t.docStructure}
+                      <span className="text-xs text-muted-foreground font-normal">
+                        ({selectedTopicIds.size}/{docTopics.length})
+                      </span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const allSelected = selectedTopicIds.size === docTopics.length;
+                          setSelectedTopicIds(allSelected ? new Set() : new Set(docTopics.map((tp) => tp.id)));
+                        }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        {selectedTopicIds.size === docTopics.length ? t.deselectAll : t.selectAll}
+                      </button>
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${structureOpen ? "rotate-180" : ""}`} />
+                    </div>
+                  </button>
+                  {structureOpen && (
+                    <div className="border-t border-border divide-y divide-border">
+                      {docTopics.map((topic) => (
+                        <label key={topic.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={selectedTopicIds.has(topic.id)}
+                            onChange={(e) => {
+                              setSelectedTopicIds((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(topic.id); else next.delete(topic.id);
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 rounded border-border accent-primary"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium">{topic.id}. {topic.title}</span>
+                            {topic.pages && (
+                              <span className="ml-2 text-xs text-muted-foreground">({topic.pages}. {t.page})</span>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                      <div className="px-4 py-3">
+                        <Button
+                          onClick={() => { void generate(true); }}
+                          disabled={selectedTopicIds.size === 0 || loading || analysing}
+                          className="w-full h-10 text-sm font-semibold"
+                        >
+                          {loading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              {chunkProgress ? t.chunkProgress(chunkProgress.current, chunkProgress.total) : t.generating}
+                            </>
+                          ) : (
+                            t.generateFromSelected
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 4: Format & Generate ─────────────────────────────────────── */}
+          {sourcesVisible && (
+            <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {stepNums.format}. {t.step4Title}
+              </h2>
+
+              {/* Format selector */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                  {t.formatLabel}
+                </label>
+                <Select
+                  value={format}
+                  onValueChange={(v) => { setFormat(v as Format); setResult(null); }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gherkin">Gherkin</SelectItem>
+                    <SelectItem value="zephyr">Zephyr XLSX</SelectItem>
+                    <SelectItem value="azurecsv">Azure DevOps CSV</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Area Path (Azure only) */}
+              {format === "azurecsv" && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                    {t.areaPath}
+                  </label>
+                  <input
+                    type="text"
+                    value={areaPath}
+                    onChange={(e) => setAreaPath(e.target.value)}
+                    placeholder={t.areaPathPlaceholder}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  onClick={() => { void generate(); }}
+                  disabled={!canGenerate() || loading || analysing}
+                  className="flex-1 h-11 text-sm font-semibold"
+                >
+                  {loading && !chunkProgress ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />{t.generating}</>
+                  ) : loading && chunkProgress ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</>
+                  ) : (
+                    t.generate
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => { void downloadResult(); }}
+                  disabled={!hasResult()}
+                  className="h-11 px-4 text-sm font-medium"
+                  title={t.download}
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline ml-1">{t.download}</span>
+                </Button>
+              </div>
+
+              {/* Chunk progress bar */}
+              {loading && chunkProgress && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</span>
+                    <span>{Math.round((chunkProgress.current / chunkProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500"
+                      style={{ width: `${(chunkProgress.current / chunkProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-4">
+                  <div className="flex gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-red-900 dark:text-red-200 text-sm">{t.error}</p>
+                      <p className="text-xs text-red-800 dark:text-red-300 mt-1">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Collapsible result preview */}
+              {hasResult() && (
+                <div className="animate-fade-in">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewOpen((o) => !o)}
+                    className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <span>{previewOpen ? t.hidePreview : t.showPreview}</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${previewOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {previewOpen && (
+                    <div className="mt-3 space-y-3">
+                      {result!.keywordSteps ? (
+                        <KeywordPreview steps={result!.keywordSteps} />
+                      ) : result!.testCases ? (
+                        <ZephyrPreview cases={result!.testCases} />
+                      ) : result!.azureCases ? (
+                        <AzurePreview cases={result!.azureCases} />
+                      ) : result!.gherkinResult ? (
+                        <GherkinPreview text={result!.gherkinResult} />
+                      ) : null}
+                      <Button onClick={() => { void downloadResult(); }} className="w-full mt-1" size="sm">
+                        <Download className="h-4 w-4" />
+                        {t.downloadFile}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
 
         <footer className="mt-16 text-center text-xs text-muted-foreground">
           {t.footer}
         </footer>
       </div>
 
-      {showConfluenceModal && userId && (
+      {showConfluenceModal && userId && confluenceEnabled && (
         <ConfluenceModal
           userId={userId}
           lang={lang}

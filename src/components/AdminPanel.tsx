@@ -295,6 +295,8 @@ function UsersTab() {
                 <th className="px-4 py-3 text-left">Cég</th>
                 <th className="px-4 py-3 text-center">Max munkamenetek</th>
                 <th className="px-4 py-3 text-center">Havi limit</th>
+                <th className="px-4 py-3 text-center">CF státusz</th>
+                <th className="px-4 py-3 text-center">Playwright</th>
                 <th className="px-4 py-3 text-center">Confluence</th>
                 <th className="px-4 py-3 text-center">Admin</th>
                 <th className="px-4 py-3 text-right">Műveletek</th>
@@ -343,6 +345,22 @@ function UsersTab() {
                   <td className="px-4 py-3 text-center">
                     <input
                       type="checkbox"
+                      checked={u.playwright_enabled ?? false}
+                      onChange={(e) => { void updateUser(u.id, { playwright_enabled: e.target.checked }); }}
+                      className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={u.confluence_enabled ?? false}
+                      onChange={(e) => { void updateUser(u.id, { confluence_enabled: e.target.checked }); }}
+                      className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <input
+                      type="checkbox"
                       checked={u.is_admin}
                       onChange={(e) => { void updateUser(u.id, { is_admin: e.target.checked }); }}
                       className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
@@ -360,7 +378,7 @@ function UsersTab() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">Még nincs felhasználó.</td>
+                  <td colSpan={9} className="px-4 py-6 text-center text-muted-foreground">Még nincs felhasználó.</td>
                 </tr>
               )}
             </tbody>

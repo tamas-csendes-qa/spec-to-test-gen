@@ -44,6 +44,8 @@ function AppRoute() {
       isAdmin={profile.is_admin}
       userEmail={profile.email}
       monthlyGenerationLimit={profile.monthly_generation_limit ?? 100}
+      playwrightEnabled={profile.playwright_enabled ?? false}
+      confluenceEnabled={profile.confluence_enabled ?? false}
       onAdminClick={profile.is_admin ? () => setShowAdmin(true) : undefined}
       onSignOut={signOut}
     />

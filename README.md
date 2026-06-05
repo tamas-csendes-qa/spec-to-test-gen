@@ -13,7 +13,9 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 - 🔗 Confluence integration: connect and import pages directly
 - 📎 Multi-document support: specification + additional context + existing test cases
 - 📋 Document structure analysis: analyse and select specific topics before generation
-- 🔐 Authentication: login, admin panel, per-user session and usage limits
+- 🔐 Authentication: login, admin panel, per-user session limits, usage limits, and feature flags (Confluence, Playwright)
+- 🎭 Playwright URL input: add application pages for future automated test mapping (per-user, admin-controlled)
+- 🔁 Real-time settings: UI updates instantly when admin changes per-user feature flags
 - 🌐 Bilingual: Hungarian and English UI
 - 🌙 Dark mode support
 - ⚡ Powered by Claude AI (Anthropic)
@@ -40,7 +42,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 | v0.6.0 | ✅ Done | Login, authentication, admin panel, concurrent session limit, usage logging, multi-document upload, existing test case expansion |
 | v0.7.0 | ✅ Done | Confluence API integration, page selection modal, multi-page support |
 | v0.8.0 | ✅ Done | Document structure analysis, topic selection, chunking support, landing page with pricing |
-| v0.9.0 | ⏳ Planned | UX refactor, progressive disclosure workflow, Playwright placeholder, per-user feature visibility |
+| v0.9.0 | ✅ Done | Progressive disclosure workflow, per-user Playwright URL input, Confluence and Playwright feature flags, real-time settings sync |
 | v0.10.0 | ⏳ Planned | Playwright UI mapping (public apps), TestRail and Xray export |
 | v1.0.0 | ⏳ Planned | Domain, production deployment |
 
@@ -61,7 +63,9 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 - 🔗 Confluence integráció: oldalak közvetlen importálása
 - 📎 Több dokumentum támogatás: specifikáció + kiegészítő dokumentum + meglévő tesztesetek
 - 📋 Dokumentum struktúra elemzés: témák kiválasztása generálás előtt
-- 🔐 Authentikáció: bejelentkezés, admin panel, felhasználónkénti session és használati limitek
+- 🔐 Authentikáció: bejelentkezés, admin panel, felhasználónkénti session limitek, használati limitek és funkció kapcsolók (Confluence, Playwright)
+- 🎭 Playwright URL bevitel: alkalmazásoldalak megadása jövőbeli automatizált tesztleképezéshez (felhasználónként, admin által vezérelt)
+- 🔁 Valós idejű beállítások: az admin által módosított funkció kapcsolók azonnal frissülnek a felhasználói felületen
 - 🌐 Kétnyelvű: magyar és angol felület
 - 🌙 Sötét mód támogatás
 - ⚡ Claude AI (Anthropic) alapú generálás
@@ -88,6 +92,6 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.6.0 | ✅ Kész | Login, authentikáció, admin panel, concurrent session limit, usage logging, több dokumentum feltöltés, meglévő tesztesetek bővítése |
 | v0.7.0 | ✅ Kész | Confluence API integráció, oldalkiválasztó modal, több oldal támogatás |
 | v0.8.0 | ✅ Kész | Dokumentum struktúra elemzés, téma kiválasztás, chunking támogatás, landing page csomagokkal |
-| v0.9.0 | ⏳ Tervezett | UX refaktor, progressive disclosure workflow, Playwright placeholder, felhasználónkénti funkció láthatóság |
+| v0.9.0 | ✅ Kész | Progressive disclosure workflow, felhasználónkénti Playwright URL bevitel, Confluence és Playwright funkció kapcsolók, valós idejű beállítás szinkronizáció |
 | v0.10.0 | ⏳ Tervezett | Playwright UI feltérképezés (publikus appok), TestRail és Xray export |
 | v1.0.0 | ⏳ Tervezett | Domain, éles deployment |

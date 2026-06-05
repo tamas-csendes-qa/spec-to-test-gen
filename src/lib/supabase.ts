@@ -11,7 +11,10 @@ export type UserProfile = {
   company_id: string | null;
   max_concurrent_sessions: number;
   monthly_generation_limit: number;
+  max_pages_per_generation: number;
   is_admin: boolean;
+  playwright_enabled: boolean;
+  confluence_enabled: boolean;
   created_at: string;
 };
 

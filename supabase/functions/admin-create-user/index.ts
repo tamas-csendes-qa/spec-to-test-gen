@@ -75,8 +75,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Insert into users table
-    const { error: profileError } = await adminClient.from("users").insert({
+    // Upsert into users table.
+    // The on_auth_user_created trigger may have already inserted a minimal row;
+    // upsert overwrites it with the admin-specified values.
+    const { error: profileError } = await adminClient.from("users").upsert({
       id: newUser.user.id,
       email: body.email,
       company_id: body.company_id ?? null,
