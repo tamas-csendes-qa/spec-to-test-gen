@@ -83,6 +83,8 @@ async function scrapeUrl(browser, url) {
       const title = document.title;
 
       // ── Inputs ─────────────────────────────────────────────────────────────
+      const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
       const inputEls = Array.from(
         document.querySelectorAll('input:not([type="hidden"]), textarea, select')
       );
@@ -94,20 +96,17 @@ async function scrapeUrl(browser, url) {
           const ariaLabel = el.getAttribute("aria-label");
           const ariaLabelledBy = el.getAttribute("aria-labelledby");
           const placeholder = el.getAttribute("placeholder");
-          const titleAttr = el.getAttribute("title");
 
+          // Resolve <label> text from DOM (for="id", aria-labelledby, wrapping label)
           let labelText = null;
-          // 1. <label for="id">
           if (id) {
             const labelEl = document.querySelector(`label[for="${id}"]`);
             if (labelEl) labelText = labelEl.innerText.trim();
           }
-          // 2. aria-labelledby
           if (!labelText && ariaLabelledBy) {
             const labeller = document.getElementById(ariaLabelledBy);
             if (labeller) labelText = labeller.innerText.trim();
           }
-          // 3. Wrapping <label>
           if (!labelText) {
             const wrap = el.closest("label");
             if (wrap) {
@@ -117,10 +116,17 @@ async function scrapeUrl(browser, url) {
             }
           }
 
+          // Priority: aria-label → <label> text → placeholder (capitalized) → name (capitalized)
+          const label =
+            ariaLabel ||
+            labelText ||
+            (placeholder ? cap(placeholder) : null) ||
+            (name ? cap(name) : null);
+
           return {
             type,
             name: name || null,
-            label: labelText || ariaLabel || placeholder || titleAttr || null,
+            label: label || null,
             placeholder: placeholder || null,
             ariaLabel: ariaLabel || null,
           };
