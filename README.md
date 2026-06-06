@@ -42,8 +42,8 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 | v0.6.0 | ✅ Done | Login, authentication, admin panel, concurrent session limit, usage logging, multi-document upload, existing test case expansion |
 | v0.7.0 | ✅ Done | Confluence API integration, page selection modal, multi-page support |
 | v0.8.0 | ✅ Done | Document structure analysis, topic selection, chunking support, landing page with pricing |
-| v0.9.0 | ✅ Done | Progressive disclosure workflow, per-user Playwright URL input, Confluence and Playwright feature flags, real-time settings sync |
-| v0.10.0 | ⏳ Planned | Playwright UI mapping (public apps), TestRail and Xray export |
+| v0.9.0 | ✅ Done | UX refactor, progressive disclosure workflow, Playwright placeholder, per-user feature visibility |
+| v0.10.0 | ✅ Done | Playwright UI mapping (public apps) element extraction |
 | v1.0.0 | ⏳ Planned | Domain, production deployment |
 
 ---
@@ -92,6 +92,6 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.6.0 | ✅ Kész | Login, authentikáció, admin panel, concurrent session limit, usage logging, több dokumentum feltöltés, meglévő tesztesetek bővítése |
 | v0.7.0 | ✅ Kész | Confluence API integráció, oldalkiválasztó modal, több oldal támogatás |
 | v0.8.0 | ✅ Kész | Dokumentum struktúra elemzés, téma kiválasztás, chunking támogatás, landing page csomagokkal |
-| v0.9.0 | ✅ Kész | Progressive disclosure workflow, felhasználónkénti Playwright URL bevitel, Confluence és Playwright funkció kapcsolók, valós idejű beállítás szinkronizáció |
-| v0.10.0 | ⏳ Tervezett | Playwright UI feltérképezés (publikus appok), TestRail és Xray export |
+| v0.9.0 | ✅ Kész | UX refaktor, progressive disclosure workflow, Playwright placeholder, felhasználónkénti funkció láthatóság |
+| v0.10.0 | ✅ Kész | Playwright UI feltérképezés (publikus appok) |
 | v1.0.0 | ⏳ Tervezett | Domain, éles deployment |
