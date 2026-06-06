@@ -1,0 +1,17 @@
+{
+  "name": "playwright-server",
+  "version": "1.0.0",
+  "description": "Playwright scraping microservice for QAgen – extracts UI structure from web pages",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.46.0"
+  }
+}
