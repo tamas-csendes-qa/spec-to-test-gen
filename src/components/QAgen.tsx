@@ -75,6 +75,17 @@ interface ResultState {
   azureCases: AzureTestCase[] | null;
 }
 
+interface ScrapedPage {
+  url: string;
+  success: boolean;
+  title?: string;
+  inputs?: Array<{ type: string; name: string | null; label: string | null }>;
+  buttons?: string[];
+  navItems?: string[];
+  headings?: Array<{ level: string; text: string }>;
+  error?: string;
+}
+
 const TYPE_DEFAULT_FORMAT: Record<TabType, Format> = {
   quick: "gherkin",
   keyword: "zephyr",

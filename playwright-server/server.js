@@ -20,6 +20,10 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+app.get("/", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -68,9 +72,11 @@ async function scrapeUrl(browser, url) {
   page.setDefaultTimeout(EVAL_TIMEOUT);
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    // Brief pause for JS-rendered content
-    await page.waitForTimeout(1500);
+    // Wait for full load event, then wait for network to go idle
+    await page.goto(url, { waitUntil: "load" });
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+    // Extra pause for JS-driven rendering after network settles
+    await page.waitForTimeout(2000);
 
     const data = await page.evaluate(() => {
       // ── Title ──────────────────────────────────────────────────────────────
@@ -86,45 +92,80 @@ async function scrapeUrl(browser, url) {
           const name = el.getAttribute("name");
           const type = el.getAttribute("type") ?? el.tagName.toLowerCase();
           const ariaLabel = el.getAttribute("aria-label");
+          const ariaLabelledBy = el.getAttribute("aria-labelledby");
           const placeholder = el.getAttribute("placeholder");
+          const titleAttr = el.getAttribute("title");
 
           let labelText = null;
+          // 1. <label for="id">
           if (id) {
             const labelEl = document.querySelector(`label[for="${id}"]`);
-            if (labelEl) labelText = labelEl.textContent.trim();
+            if (labelEl) labelText = labelEl.innerText.trim();
           }
+          // 2. aria-labelledby
+          if (!labelText && ariaLabelledBy) {
+            const labeller = document.getElementById(ariaLabelledBy);
+            if (labeller) labelText = labeller.innerText.trim();
+          }
+          // 3. Wrapping <label>
           if (!labelText) {
             const wrap = el.closest("label");
             if (wrap) {
               const clone = wrap.cloneNode(true);
               clone.querySelectorAll("input, textarea, select").forEach((c) => c.remove());
-              labelText = clone.textContent.trim() || null;
+              labelText = clone.innerText.trim() || null;
             }
           }
 
           return {
             type,
             name: name || null,
-            label: labelText || ariaLabel || placeholder || null,
+            label: labelText || ariaLabel || placeholder || titleAttr || null,
+            placeholder: placeholder || null,
+            ariaLabel: ariaLabel || null,
           };
         })
         .filter((i) => i.name || i.label);
 
       // ── Buttons ────────────────────────────────────────────────────────────
+      // Use innerText (respects rendered CSS) and a broader selector to catch
+      // link-buttons (<a class="btn ...">), role="button" elements, etc.
       const buttonEls = Array.from(
         document.querySelectorAll(
-          'button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'
+          'button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"], a[class*="btn"], a[class*="button"]'
         )
       );
       const buttons = [
         ...new Set(
           buttonEls
-            .map(
-              (el) =>
-                el.textContent?.trim() ||
+            .map((el) => {
+              const text = el.innerText?.trim();
+              if (text) return text;
+              return (
                 el.getAttribute("value") ||
-                el.getAttribute("aria-label")
-            )
+                el.getAttribute("aria-label") ||
+                el.getAttribute("title") ||
+                null
+              );
+            })
+            .filter(Boolean)
+        ),
+      ];
+
+      // ── All clickable links (anchors with short, meaningful text) ───────────
+      const links = [
+        ...new Set(
+          Array.from(document.querySelectorAll("a"))
+            .map((a) => a.innerText?.trim())
+            .filter((t) => t && t.length > 0 && t.length < 80)
+        ),
+      ];
+
+      // ── All aria-labels on interactive elements ─────────────────────────────
+      const ariaLabels = [
+        ...new Set(
+          Array.from(document.querySelectorAll("[aria-label]"))
+            .map((el) => el.getAttribute("aria-label"))
             .filter(Boolean)
         ),
       ];
@@ -136,15 +177,15 @@ async function scrapeUrl(browser, url) {
         )
       );
       const navItems = [
-        ...new Set(navEls.map((el) => el.textContent?.trim()).filter(Boolean)),
+        ...new Set(navEls.map((el) => el.innerText?.trim()).filter(Boolean)),
       ];
 
       // ── Headings ───────────────────────────────────────────────────────────
       const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))
-        .map((el) => ({ level: el.tagName.toLowerCase(), text: el.textContent?.trim() }))
+        .map((el) => ({ level: el.tagName.toLowerCase(), text: el.innerText?.trim() }))
         .filter((h) => h.text);
 
-      return { title, inputs, buttons, navItems, headings };
+      return { title, inputs, buttons, links, ariaLabels, navItems, headings };
     });
 
     return { url, success: true, ...data };

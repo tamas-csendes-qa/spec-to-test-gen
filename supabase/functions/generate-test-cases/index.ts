@@ -33,8 +33,10 @@ type RequestBody = GenerateBody | AnalyseBody | ExtractBody;
 
 const SECONDARY_DOCUMENT_INSTRUCTION =
   "The PRIMARY DOCUMENT is the specification — generate test cases based on this document. " +
-  "The SECONDARY DOCUMENT is additional context (e.g. user manual, technical documentation, field descriptions) — " +
-  "use it to enrich the test cases with accurate field names, validation rules, and technical details. " +
+  "The SECONDARY DOCUMENT is additional context — it may be a user manual, technical documentation, or APPLICATION PAGE DATA " +
+  "extracted from the live application by Playwright (containing page titles, headings, input field labels, button texts, and navigation items). " +
+  "Use it to enrich the test cases with accurate UI element names, validation rules, and technical details. " +
+  "When APPLICATION PAGE DATA is present, always prefer the exact UI element names listed there over inventing or translating them. " +
   "Do not generate separate test cases from the secondary document alone.";
 
 const EXISTING_TC_INSTRUCTION =
@@ -45,10 +47,17 @@ const EXISTING_TC_INSTRUCTION =
   "If no specification is provided but existing test cases are uploaded, still generate the expanded keyword test cases based on the existing test cases alone.";
 
 function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasExistingTc: boolean): string {
+  const uiElementRule =
+    "IMPORTANT — UI element names: Use button labels, field names, menu items, and link texts exactly as they appear " +
+    "in the source documents. Do not translate them. " +
+    "If a button is labeled \"Submit\", write \"Kattints a 'Submit' gombra\" — not \"Kattints a 'Küldés' gombra\". " +
+    "If a field is labeled \"Email address\", write \"Add meg az 'Email address' mezőt\" — not \"Add meg az 'E-mail cím' mezőt\". " +
+    "Only the surrounding test step sentence should be in Hungarian; the UI element name stays in its original form.";
+
   const langNote = lang === "hu"
     ? (tab === "keyword"
-      ? "Generate the test cases in Hungarian. When writing step actions (stepAction), always use imperative form (felszólító mód). Examples: use \"Kattints a Küldés gombra\" instead of \"Kattintás a Küldés gombra\", \"Add meg az email mezőt\" instead of \"Megadás az email mezőben\", \"Navigálj a főoldalra\" instead of \"Navigálás a főoldalra\", \"Ellenőrizd az eredményt\" instead of \"Ellenőrzés az eredményen\". Use imperative form for all step actions throughout the test cases."
-      : "Generate the test cases in Hungarian.")
+      ? "Generate the test cases in Hungarian. When writing step actions (stepAction), always use imperative form (felszólító mód). Examples: use \"Kattints a Küldés gombra\" instead of \"Kattintás a Küldés gombra\", \"Add meg az email mezőt\" instead of \"Megadás az email mezőben\", \"Navigálj a főoldalra\" instead of \"Navigálás a főoldalra\", \"Ellenőrizd az eredményt\" instead of \"Ellenőrzés az eredményen\". Use imperative form for all step actions throughout the test cases. " + uiElementRule
+      : "Generate the test cases in Hungarian. " + uiElementRule)
     : "Generate the test cases in English.";
 
   let base: string;
