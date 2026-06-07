@@ -7,6 +7,7 @@ app.use(express.json({ limit: "1mb" }));
 const MAX_URLS = 10;
 const NAV_TIMEOUT = 30_000;
 const EVAL_TIMEOUT = 15_000;
+const BROWSER_IDLE_MS = 5 * 60 * 1000;
 
 // Optional bearer-token auth – set API_KEY env var to enable
 const API_KEY = process.env.API_KEY ?? null;
@@ -19,6 +20,52 @@ function authMiddleware(req, res, next) {
   }
   next();
 }
+
+// ── Lazy browser singleton ──────────────────────────────────────────────────
+let browser = null;
+let browserLastUsed = 0;
+let browserInitializing = false;
+
+async function getBrowser() {
+  if (browser && browser.isConnected()) {
+    browserLastUsed = Date.now();
+    return browser;
+  }
+  // Wait if another request is already launching the browser
+  if (browserInitializing) {
+    await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        if (!browserInitializing) { clearInterval(interval); resolve(); }
+      }, 100);
+    });
+    if (browser && browser.isConnected()) {
+      browserLastUsed = Date.now();
+      return browser;
+    }
+  }
+  browserInitializing = true;
+  try {
+    browser = await chromium.launch({
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    });
+    browserLastUsed = Date.now();
+    console.log("[browser] launched");
+  } finally {
+    browserInitializing = false;
+  }
+  return browser;
+}
+
+// Close browser after idle period to reclaim memory
+setInterval(async () => {
+  if (browser && browser.isConnected() && Date.now() - browserLastUsed > BROWSER_IDLE_MS) {
+    console.log("[browser] closing due to inactivity");
+    await browser.close().catch(() => {});
+    browser = null;
+  }
+}, 60_000);
+
+// ── Routes ──────────────────────────────────────────────────────────────────
 
 app.get("/", (_req, res) => {
   res.json({ status: "ok" });
@@ -39,50 +86,37 @@ app.post("/scrape", authMiddleware, async (req, res) => {
   }
 
   const invalid = urls.filter((u) => {
-    try {
-      new URL(u);
-      return false;
-    } catch {
-      return true;
-    }
+    try { new URL(u); return false; } catch { return true; }
   });
   if (invalid.length > 0) {
     return res.status(400).json({ error: "Invalid URLs detected", invalid });
   }
 
-  let browser;
+  let b;
   try {
-    browser = await chromium.launch({
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    });
-
-    const results = await Promise.all(urls.map((url) => scrapeUrl(browser, url)));
+    b = await getBrowser();
+    const results = await Promise.all(urls.map((url) => scrapeUrl(b, url)));
     res.json({ results });
   } catch (err) {
-    console.error("[scrape] browser launch error:", err.message);
+    console.error("[scrape] error:", err.message);
+    // Reset browser on error so next request gets a fresh one
+    if (browser) { await browser.close().catch(() => {}); browser = null; }
     res.status(500).json({ error: "Browser error", details: err.message });
-  } finally {
-    if (browser) await browser.close().catch(() => {});
   }
 });
 
-async function scrapeUrl(browser, url) {
-  const page = await browser.newPage();
+async function scrapeUrl(b, url) {
+  const page = await b.newPage();
   page.setDefaultNavigationTimeout(NAV_TIMEOUT);
   page.setDefaultTimeout(EVAL_TIMEOUT);
 
   try {
-    // Wait for full load event, then wait for network to go idle
     await page.goto(url, { waitUntil: "load" });
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-    // Extra pause for JS-driven rendering after network settles
     await page.waitForTimeout(2000);
 
     const data = await page.evaluate(() => {
-      // ── Title ──────────────────────────────────────────────────────────────
       const title = document.title;
-
-      // ── Inputs ─────────────────────────────────────────────────────────────
       const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
       const inputEls = Array.from(
@@ -97,7 +131,6 @@ async function scrapeUrl(browser, url) {
           const ariaLabelledBy = el.getAttribute("aria-labelledby");
           const placeholder = el.getAttribute("placeholder");
 
-          // Resolve <label> text from DOM (for="id", aria-labelledby, wrapping label)
           let labelText = null;
           if (id) {
             const labelEl = document.querySelector(`label[for="${id}"]`);
@@ -116,26 +149,16 @@ async function scrapeUrl(browser, url) {
             }
           }
 
-          // Priority: aria-label → <label> text → placeholder (capitalized) → name (capitalized)
           const label =
             ariaLabel ||
             labelText ||
             (placeholder ? cap(placeholder) : null) ||
             (name ? cap(name) : null);
 
-          return {
-            type,
-            name: name || null,
-            label: label || null,
-            placeholder: placeholder || null,
-            ariaLabel: ariaLabel || null,
-          };
+          return { type, name: name || null, label: label || null, placeholder: placeholder || null, ariaLabel: ariaLabel || null };
         })
         .filter((i) => i.name || i.label);
 
-      // ── Buttons ────────────────────────────────────────────────────────────
-      // Use innerText (respects rendered CSS) and a broader selector to catch
-      // link-buttons (<a class="btn ...">), role="button" elements, etc.
       const buttonEls = Array.from(
         document.querySelectorAll(
           'button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"], a[class*="btn"], a[class*="button"]'
@@ -147,18 +170,12 @@ async function scrapeUrl(browser, url) {
             .map((el) => {
               const text = el.innerText?.trim();
               if (text) return text;
-              return (
-                el.getAttribute("value") ||
-                el.getAttribute("aria-label") ||
-                el.getAttribute("title") ||
-                null
-              );
+              return el.getAttribute("value") || el.getAttribute("aria-label") || el.getAttribute("title") || null;
             })
             .filter(Boolean)
         ),
       ];
 
-      // ── All clickable links (anchors with short, meaningful text) ───────────
       const links = [
         ...new Set(
           Array.from(document.querySelectorAll("a"))
@@ -167,7 +184,6 @@ async function scrapeUrl(browser, url) {
         ),
       ];
 
-      // ── All aria-labels on interactive elements ─────────────────────────────
       const ariaLabels = [
         ...new Set(
           Array.from(document.querySelectorAll("[aria-label]"))
@@ -176,7 +192,6 @@ async function scrapeUrl(browser, url) {
         ),
       ];
 
-      // ── Navigation ─────────────────────────────────────────────────────────
       const navEls = Array.from(
         document.querySelectorAll(
           'nav a, nav button, [role="navigation"] a, [role="menuitem"], header nav a, header a'
@@ -186,7 +201,6 @@ async function scrapeUrl(browser, url) {
         ...new Set(navEls.map((el) => el.innerText?.trim()).filter(Boolean)),
       ];
 
-      // ── Headings ───────────────────────────────────────────────────────────
       const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))
         .map((el) => ({ level: el.tagName.toLowerCase(), text: el.innerText?.trim() }))
         .filter((h) => h.text);
@@ -201,6 +215,8 @@ async function scrapeUrl(browser, url) {
     await page.close().catch(() => {});
   }
 }
+
+// ── Start ───────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT ?? 3000;
 app.listen(PORT, () => {
