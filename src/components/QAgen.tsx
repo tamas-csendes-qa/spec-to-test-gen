@@ -353,14 +353,23 @@ async function callPlaywrightScrapeAPI(urls: string[]): Promise<ScrapedPage[]> {
   if (!supabaseUrl || !anonKey) return [];
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token ?? anonKey;
+  console.log("[playwright] calling edge function with urls:", urls);
   const response = await fetch(`${supabaseUrl}/functions/v1/playwright-scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ urls }),
   });
-  if (!response.ok) return [];
+  console.log("[playwright] edge function response status:", response.status);
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("[playwright] edge function error:", response.status, errText);
+    return [];
+  }
   const data = await response.json();
-  return (data.results as ScrapedPage[]) ?? [];
+  console.log("[playwright] raw response from edge function:", JSON.stringify(data));
+  const results = (data.results as ScrapedPage[]) ?? [];
+  console.log("[playwright] parsed results count:", results.length);
+  return results;
 }
 
 function formatScrapedPages(pages: ScrapedPage[]): string {
@@ -858,9 +867,14 @@ export function QAgen({
       setPlaywrightScraping(true);
       try {
         const scraped = await callPlaywrightScrapeAPI(playwrightUrls);
+        console.log("[playwright] scraped pages:", JSON.stringify(scraped));
         const scraperText = formatScrapedPages(scraped);
+        console.log("[playwright] formatted text for prompt:", scraperText);
         if (scraperText) {
           secondaryText = (secondaryText ?? "") + `\n\n${scraperText}`;
+          console.log("[playwright] secondaryText sent to Claude (first 500 chars):", secondaryText.slice(0, 500));
+        } else {
+          console.warn("[playwright] formatScrapedPages returned empty string – no data added to prompt");
         }
       } finally {
         setPlaywrightScraping(false);
