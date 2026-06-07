@@ -36,8 +36,15 @@ const SECONDARY_DOCUMENT_INSTRUCTION =
   "The SECONDARY DOCUMENT is additional context — it may be a user manual, technical documentation, or APPLICATION PAGE DATA " +
   "extracted from the live application by Playwright (containing page titles, headings, input field labels, button texts, and navigation items). " +
   "Use it to enrich the test cases with accurate UI element names, validation rules, and technical details. " +
-  "When APPLICATION PAGE DATA is present, always prefer the exact UI element names listed there over inventing or translating them. " +
+  "When APPLICATION PAGE DATA is present, always use the exact UI element names from it — never invent or translate them. " +
   "Do not generate separate test cases from the secondary document alone.";
+
+const PLAYWRIGHT_UI_ELEMENT_RULE =
+  "CRITICAL RULE - DO NOT TRANSLATE UI ELEMENTS: When Playwright scraped data is provided, you MUST use the EXACT original UI element names as they appear in the application. This is mandatory and cannot be overridden.\n" +
+  "- If the field is called 'firstname' → write 'firstname' (NOT 'keresztnév')\n" +
+  "- If the button is called 'Reserve Now' → write 'Reserve Now' (NOT 'foglalás elküldése')\n" +
+  "- If the menu says 'Check-in' → write 'Check-in' (NOT 'érkezés')\n" +
+  "The surrounding test description should be in Hungarian, but ALL UI element names stay in their original language.";
 
 const EXISTING_TC_INSTRUCTION =
   "The EXISTING TEST CASES contain one-line or minimal test cases that need to be expanded. " +
@@ -47,17 +54,10 @@ const EXISTING_TC_INSTRUCTION =
   "If no specification is provided but existing test cases are uploaded, still generate the expanded keyword test cases based on the existing test cases alone.";
 
 function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasExistingTc: boolean): string {
-  const uiElementRule =
-    "IMPORTANT — UI element names: Use button labels, field names, menu items, and link texts exactly as they appear " +
-    "in the source documents. Do not translate them. " +
-    "If a button is labeled \"Submit\", write \"Kattints a 'Submit' gombra\" — not \"Kattints a 'Küldés' gombra\". " +
-    "If a field is labeled \"Email address\", write \"Add meg az 'Email address' mezőt\" — not \"Add meg az 'E-mail cím' mezőt\". " +
-    "Only the surrounding test step sentence should be in Hungarian; the UI element name stays in its original form.";
-
   const langNote = lang === "hu"
     ? (tab === "keyword"
-      ? "Generate the test cases in Hungarian. When writing step actions (stepAction), always use imperative form (felszólító mód). Examples: use \"Kattints a Küldés gombra\" instead of \"Kattintás a Küldés gombra\", \"Add meg az email mezőt\" instead of \"Megadás az email mezőben\", \"Navigálj a főoldalra\" instead of \"Navigálás a főoldalra\", \"Ellenőrizd az eredményt\" instead of \"Ellenőrzés az eredményen\". Use imperative form for all step actions throughout the test cases. " + uiElementRule
-      : "Generate the test cases in Hungarian. " + uiElementRule)
+      ? "Generate the test cases in Hungarian. When writing step actions (stepAction), always use imperative form (felszólító mód). Examples: use \"Kattints a Küldés gombra\" instead of \"Kattintás a Küldés gombra\", \"Add meg az email mezőt\" instead of \"Megadás az email mezőben\", \"Navigálj a főoldalra\" instead of \"Navigálás a főoldalra\", \"Ellenőrizd az eredményt\" instead of \"Ellenőrzés az eredményen\". Use imperative form for all step actions throughout the test cases."
+      : "Generate the test cases in Hungarian.")
     : "Generate the test cases in English.";
 
   let base: string;
@@ -73,6 +73,9 @@ function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasEx
   }
 
   const additions: string[] = [];
+  if (lang === "hu") {
+    additions.push(PLAYWRIGHT_UI_ELEMENT_RULE);
+  }
   if (hasSecondary && (tab === "quick" || tab === "keyword")) {
     additions.push(SECONDARY_DOCUMENT_INSTRUCTION);
   }
