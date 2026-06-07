@@ -1,3 +1,5 @@
+console.log("[startup] server.js executing");
+
 const express = require("express");
 const { chromium } = require("playwright");
 
@@ -9,8 +11,12 @@ process.on("unhandledRejection", (reason) => {
   console.error("[process] unhandledRejection:", reason);
 });
 
+console.log("[startup] express app created");
 const app = express();
 app.use(express.json({ limit: "1mb" }));
+
+// Keep the event loop alive
+setInterval(() => {}, 1000 * 60 * 60);
 
 const MAX_URLS = 10;
 const NAV_TIMEOUT = 30_000;
@@ -76,6 +82,7 @@ setInterval(async () => {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 app.get("/", (_req, res) => {
+  console.log("[health] health check called");
   res.json({ status: "ok" });
 });
 
@@ -227,6 +234,7 @@ async function scrapeUrl(b, url) {
 // ── Start ───────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 8080;
+console.log("[startup] calling app.listen on port", PORT);
 app.listen(PORT, () => {
-  console.log(`Playwright server listening on port ${PORT}`);
+  console.log("[startup] server is now listening");
 });
