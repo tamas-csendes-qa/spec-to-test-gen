@@ -124,6 +124,7 @@ const STRINGS = {
     formatLabel: "Kimeneti formátum",
     generate: "Tesztesetek generálása",
     generating: "Generálás folyamatban…",
+    playwrightScraping: "Oldalak feltérképezése…",
     download: "Letöltés",
     downloadFile: "Fájl letöltése",
     footer: "QAgen v0.9.0",
@@ -195,6 +196,7 @@ const STRINGS = {
     formatLabel: "Output format",
     generate: "Generate test cases",
     generating: "Generating…",
+    playwrightScraping: "Mapping pages…",
     download: "Download",
     downloadFile: "Download file",
     footer: "QAgen v0.9.0",
@@ -343,6 +345,37 @@ async function callAnalyseAPI(text: string, lang: Lang): Promise<DocTopic[]> {
       return [];
     }
   }
+}
+
+async function callPlaywrightScrapeAPI(urls: string[]): Promise<ScrapedPage[]> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) return [];
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? anonKey;
+  const response = await fetch(`${supabaseUrl}/functions/v1/playwright-scrape`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ urls }),
+  });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return (data.results as ScrapedPage[]) ?? [];
+}
+
+function formatScrapedPages(pages: ScrapedPage[]): string {
+  return pages
+    .map((page) => {
+      if (!page.success) return `[${page.url}]\nFailed to scrape: ${page.error ?? "unknown error"}`;
+      const lines: string[] = [`[APPLICATION PAGE DATA: ${page.url}]`];
+      if (page.title) lines.push(`Title: ${page.title}`);
+      if (page.headings?.length) lines.push(`Headings: ${page.headings.map((h) => h.text).join(" | ")}`);
+      if (page.inputs?.length) lines.push(`Input fields: ${page.inputs.map((i) => i.label ?? i.name).join(", ")}`);
+      if (page.buttons?.length) lines.push(`Buttons: ${page.buttons.join(", ")}`);
+      if (page.navItems?.length) lines.push(`Navigation: ${page.navItems.join(", ")}`);
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 
 async function buildExcelBlob(testCases: TestCase[]): Promise<Blob> {
@@ -544,6 +577,7 @@ export function QAgen({
   const [format, setFormat] = useState<Format>("gherkin");
   const [areaPath, setAreaPath] = useState("");
   const [loading, setLoading] = useState(false);
+  const [playwrightScraping, setPlaywrightScraping] = useState(false);
   const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ResultState | null>(null);
@@ -821,8 +855,16 @@ export function QAgen({
       }
     }
     if (playwrightUrls.length > 0 && tab !== "userstory") {
-      const urlNote = `\n\n[Playwright URLs]\n${playwrightUrls.join("\n")}`;
-      secondaryText = (secondaryText ?? "") + urlNote;
+      setPlaywrightScraping(true);
+      try {
+        const scraped = await callPlaywrightScrapeAPI(playwrightUrls);
+        const scraperText = formatScrapedPages(scraped);
+        if (scraperText) {
+          secondaryText = (secondaryText ?? "") + `\n\n${scraperText}`;
+        }
+      } finally {
+        setPlaywrightScraping(false);
+      }
     }
 
     let existingTcText: string | undefined;
@@ -1653,13 +1695,15 @@ export function QAgen({
               <div className="flex gap-2 flex-wrap">
                 <Button
                   onClick={() => { void generate(); }}
-                  disabled={!canGenerate() || loading || analysing}
+                  disabled={!canGenerate() || loading || analysing || playwrightScraping}
                   className="flex-1 h-11 text-sm font-semibold"
                 >
-                  {loading && !chunkProgress ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />{t.generating}</>
+                  {playwrightScraping ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />{t.playwrightScraping}</>
                   ) : loading && chunkProgress ? (
                     <><Loader2 className="h-4 w-4 animate-spin" />{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</>
+                  ) : loading ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />{t.generating}</>
                   ) : (
                     t.generate
                   )}
