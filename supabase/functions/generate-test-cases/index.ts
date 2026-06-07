@@ -242,6 +242,12 @@ Deno.serve(async (req: Request) => {
     const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
     const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText, confluenceText);
 
+    if (secondaryText?.includes("APPLICATION PAGE DATA")) {
+      console.log("[generate] secondaryText contains Playwright data, length:", secondaryText.length);
+      console.log("[generate] secondaryText preview:", secondaryText.slice(0, 1000));
+      console.log("[generate] systemPrompt:", systemPrompt.slice(0, 500));
+    }
+
     const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage);
 
     return new Response(

@@ -60,8 +60,11 @@ Deno.serve(async (req: Request) => {
 
     const playwrightServerUrl = Deno.env.get("PLAYWRIGHT_SERVER_URL");
     if (!playwrightServerUrl) {
+      console.error("[playwright-scrape] PLAYWRIGHT_SERVER_URL not set");
       return jsonError("Playwright server not configured", 503);
     }
+
+    console.log("[playwright-scrape] sending to Railway:", playwrightServerUrl, "urls:", JSON.stringify(urls));
 
     const playwrightApiKey = Deno.env.get("PLAYWRIGHT_SERVER_API_KEY") ?? "";
     const scrapeHeaders: Record<string, string> = { "Content-Type": "application/json" };
@@ -73,13 +76,18 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({ urls }),
     });
 
+    console.log("[playwright-scrape] Railway response status:", upstream.status);
+
     if (!upstream.ok) {
       const errText = await upstream.text();
       console.error("[playwright-scrape] upstream error:", upstream.status, errText);
       return jsonError(`Playwright server error: ${upstream.status}`, 502);
     }
 
-    const data = await upstream.json();
+    const data = await upstream.json() as { results?: unknown[] };
+    const results = data.results ?? [];
+    console.log("[playwright-scrape] results count:", results.length);
+    console.log("[playwright-scrape] results:", JSON.stringify(results).slice(0, 2000));
     return jsonOk(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
