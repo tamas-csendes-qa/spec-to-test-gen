@@ -1,3 +1,4 @@
+process.stdout.write('PROCESS STARTED\n');
 console.log("[startup] server.js executing");
 
 const express = require("express");
