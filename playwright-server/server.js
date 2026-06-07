@@ -1,6 +1,14 @@
 const express = require("express");
 const { chromium } = require("playwright");
 
+// Prevent unexpected errors from killing the process
+process.on("uncaughtException", (err) => {
+  console.error("[process] uncaughtException:", err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[process] unhandledRejection:", reason);
+});
+
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
