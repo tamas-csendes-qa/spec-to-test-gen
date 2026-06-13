@@ -15,6 +15,7 @@ interface GenerateBody {
   secondaryText?: string;
   existingTcText?: string;
   confluenceText?: string;
+  extraInstructions?: string;
 }
 
 interface AnalyseBody {
@@ -230,7 +231,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- GENERATE action (default) ---
-    const { text, format, lang, tab, secondaryText, existingTcText, confluenceText } = body as GenerateBody;
+    const { text, format, lang, tab, secondaryText, existingTcText, confluenceText, extraInstructions } = body as GenerateBody;
 
     if (!text && !existingTcText && !confluenceText) {
       return new Response(
@@ -239,7 +240,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const systemPrompt = getSystemPrompt(tab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
+    const baseSystemPrompt = getSystemPrompt(tab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
+    const systemPrompt = extraInstructions ? `${baseSystemPrompt}\n\n${extraInstructions}` : baseSystemPrompt;
     const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText, confluenceText);
 
     if (secondaryText?.includes("APPLICATION PAGE DATA")) {

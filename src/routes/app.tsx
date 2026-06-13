@@ -7,7 +7,9 @@ import { useAuth } from "@/lib/auth";
 function AppRoute() {
   const { user, profile, sessionToken, loading, signOut } = useAuth();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
+  const [dark] = useState(() =>
+    typeof window !== 'undefined' && window.localStorage.getItem('qagen-dark-mode') === 'true'
+  );
   const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => {

@@ -6,10 +6,13 @@ import { useAuth } from "@/lib/auth";
 function LoginRoute() {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(() =>
+    typeof window !== 'undefined' && window.localStorage.getItem('qagen-dark-mode') === 'true'
+  );
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem('qagen-dark-mode', String(dark));
   }, [dark]);
 
   useEffect(() => {

@@ -6,7 +6,6 @@ import {
   FileText,
   Download,
   Loader as Loader2,
-  Sparkles,
   CircleAlert as AlertCircle,
   Settings,
   LogOut,
@@ -18,14 +17,6 @@ import { logUsage, touchSessionByToken, getMonthlyUsageCount } from "@/lib/auth"
 import { supabase } from "@/lib/supabase";
 import { ConfluenceModal } from "@/components/ConfluenceModal";
 import type { ConfluencePage } from "@/components/ConfluenceModal";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import * as pdfjsLib from "pdfjs-dist";
 import * as XLSX from "xlsx";
@@ -164,6 +155,33 @@ const STRINGS = {
     playwrightPlaceholder: "https://myapp.example.com",
     playwrightNote: "A megadott oldalak tartalmát feltérképezzük és felhasználjuk a tesztesetek generálásához. Csak nyilvánosan elérhető oldalak támogatottak.",
     playwrightInvalidUrl: "Érvénytelen URL. Az URL-nek http:// vagy https://-szel kell kezdődnie.",
+    genSettingsTitle: "Generálási beállítások (opcionális)",
+    genSettingsTcTypes: "Teszteset típusok",
+    genSettingsFocusAreas: "Fókuszterületek",
+    genSettingsPriority: "Prioritás szint",
+    genSettingsCount: "Tesztesetek száma",
+    tcTypePositive: "Pozitív tesztesetek",
+    tcTypeNegative: "Negatív tesztesetek",
+    tcTypeEdgeCase: "Edge case-ek",
+    tcTypeBoundary: "Határérték tesztek",
+    focusFunctional: "Funkcionális tesztek",
+    focusUI: "UI/vizuális ellenőrzés",
+    focusLanguage: "Nyelvhelyesség ellenőrzés",
+    focusResponsive: "Reszponzivitás",
+    priorityHigh: "Csak High prioritású",
+    priorityHighMedium: "High és Medium",
+    priorityAll: "Minden prioritás",
+    countFew: "Kevés (5-10)",
+    countMedium: "Közepes (10-20)",
+    countMany: "Sok (20+)",
+    summary: "ÖSSZEFOGLALÓ",
+    typeLbl: "Típus",
+    modeLbl: "Mód",
+    fmtLbl: "Formátum",
+    cont: "Folytatás",
+    generated: "Tesztesetek generálva!",
+    reset: "Újrakezd",
+    used: "felhasználva",
   },
   en: {
     subtitle: "Specification analysis is our business.",
@@ -236,6 +254,33 @@ const STRINGS = {
     playwrightPlaceholder: "https://myapp.example.com",
     playwrightNote: "The provided pages will be mapped and used for test case generation. Only publicly accessible pages are supported.",
     playwrightInvalidUrl: "Invalid URL. The URL must start with http:// or https://",
+    genSettingsTitle: "Generation settings (optional)",
+    genSettingsTcTypes: "Test case types",
+    genSettingsFocusAreas: "Focus areas",
+    genSettingsPriority: "Priority level",
+    genSettingsCount: "Test case count",
+    tcTypePositive: "Positive test cases",
+    tcTypeNegative: "Negative test cases",
+    tcTypeEdgeCase: "Edge cases",
+    tcTypeBoundary: "Boundary value tests",
+    focusFunctional: "Functional tests",
+    focusUI: "UI/visual verification",
+    focusLanguage: "Language/spelling check",
+    focusResponsive: "Responsiveness",
+    priorityHigh: "High priority only",
+    priorityHighMedium: "High and Medium",
+    priorityAll: "All priorities",
+    countFew: "Few (5-10)",
+    countMedium: "Medium (10-20)",
+    countMany: "Many (20+)",
+    summary: "SUMMARY",
+    typeLbl: "Type",
+    modeLbl: "Mode",
+    fmtLbl: "Format",
+    cont: "Continue",
+    generated: "Test cases generated!",
+    reset: "Reset",
+    used: "used",
   },
 } as const;
 
@@ -287,7 +332,8 @@ async function callClaudeAPI(
   tab: TabType,
   secondaryText?: string,
   existingTcText?: string,
-  confluenceText?: string
+  confluenceText?: string,
+  extraInstructions?: string
 ): Promise<{ result: string; token_count: number }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -300,7 +346,7 @@ async function callClaudeAPI(
       "Content-Type": "application/json",
       Authorization: `Bearer ${anonKey}`,
     },
-    body: JSON.stringify({ text, format, lang, tab, secondaryText, existingTcText, confluenceText }),
+    body: JSON.stringify({ text, format, lang, tab, secondaryText, existingTcText, confluenceText, extraInstructions }),
   });
 
   if (!response.ok) {
@@ -551,7 +597,9 @@ export function QAgen({
   onSignOut,
 }: QAgenProps = {}) {
   // Core UI
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(() =>
+    typeof window !== 'undefined' && window.localStorage.getItem('qagen-dark-mode') === 'true'
+  );
   const [lang, setLang] = useState<Lang>("hu");
 
   // Step 1 – type selection
@@ -561,6 +609,19 @@ export function QAgen({
   // Step 2 – keyword mode (only for keyword type)
   const [keywordMode, setKeywordMode] = useState<KeywordMode | null>(null);
   const [step2Collapsed, setStep2Collapsed] = useState(false);
+
+  // Generation settings panel
+  const [genSettingsOpen, setGenSettingsOpen] = useState(false);
+  const [genPositive, setGenPositive] = useState(false);
+  const [genNegative, setGenNegative] = useState(false);
+  const [genEdgeCase, setGenEdgeCase] = useState(false);
+  const [genBoundary, setGenBoundary] = useState(false);
+  const [focusFunctional, setFocusFunctional] = useState(false);
+  const [focusUI, setFocusUI] = useState(false);
+  const [focusLanguage, setFocusLanguage] = useState(false);
+  const [focusResponsive, setFocusResponsive] = useState(false);
+  const [genPriority, setGenPriority] = useState<"high" | "high-medium" | "all" | null>(null);
+  const [genCount, setGenCount] = useState<"few" | "medium" | "many" | null>(null);
 
   // Step 3 – sources
   const [file, setFile] = useState<File | null>(null);
@@ -592,6 +653,8 @@ export function QAgen({
   const [result, setResult] = useState<ResultState | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [monthlyCount, setMonthlyCount] = useState<number>(0);
+  const [accentColor, setAccentColor] = useState('#3b7ff5');
+  const [tweaksOpen, setTweaksOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const secondaryInputRef = useRef<HTMLInputElement>(null);
@@ -599,6 +662,7 @@ export function QAgen({
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem('qagen-dark-mode', String(dark));
   }, [dark]);
 
   useEffect(() => {
@@ -622,6 +686,26 @@ export function QAgen({
         if (data) setConfluencePages(data as ConfluencePage[]);
       });
   }, [userId]);
+
+  useEffect(() => {
+    const id = 'qagen-styles';
+    if (document.getElementById(id)) return;
+    const el = document.createElement('style');
+    el.id = id;
+    el.textContent = `
+      .qa-bg{background-image:linear-gradient(rgba(59,127,245,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(59,127,245,.04) 1px,transparent 1px);background-size:28px 28px}
+      @keyframes fadeUp{from{transform:translateY(8px);opacity:.3}to{transform:translateY(0);opacity:1}}
+      @keyframes glowPulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 18px 3px rgba(59,127,245,.35)}}
+      @keyframes dotPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.7}}
+      .fade-up{animation:fadeUp .28s ease-out forwards}
+      .dot-pulse{animation:dotPulse 2s ease-in-out infinite}
+      .type-card{transition:border-color .15s,box-shadow .15s,background .15s}
+      .card-selected{animation:glowPulse 2.4s ease-in-out infinite}
+    `;
+    document.head.appendChild(el);
+    return () => { document.getElementById(id)?.remove(); };
+  }, []);
+
 
   const t = STRINGS[lang];
 
@@ -707,6 +791,28 @@ export function QAgen({
     setPlaywrightUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
     setPlaywrightUrlInput("");
     setPlaywrightUrlError(null);
+  };
+
+  const handleReset = () => {
+    setSelectedType(null);
+    setStep1Collapsed(false);
+    setKeywordMode(null);
+    setStep2Collapsed(false);
+    resetSources();
+    setResult(null);
+    setError(null);
+    setFormat("gherkin");
+    setGenSettingsOpen(false);
+    setGenPositive(false);
+    setGenNegative(false);
+    setGenEdgeCase(false);
+    setGenBoundary(false);
+    setFocusFunctional(false);
+    setFocusUI(false);
+    setFocusLanguage(false);
+    setFocusResponsive(false);
+    setGenPriority(null);
+    setGenCount(null);
   };
 
   // ── File handlers ───────────────────────────────────────────────────────────
@@ -830,11 +936,44 @@ export function QAgen({
     return { gherkinResult: gherkin || null, testCases: null, keywordSteps: null, azureCases: null };
   };
 
+  // ── Generation settings ─────────────────────────────────────────────────────
+
+  const buildGenSettingsInstructions = (): string => {
+    const hasAnyTcType = genPositive || genNegative || genEdgeCase || genBoundary;
+    const hasAnyFocus = focusFunctional || focusUI || focusLanguage || focusResponsive;
+    if (!hasAnyTcType && !hasAnyFocus && genPriority === null && genCount === null) return "";
+
+    const parts: string[] = [];
+
+    if (genPositive && !genNegative) parts.push("Generate ONLY positive test cases.");
+    else if (!genPositive && genNegative) parts.push("Generate ONLY negative test cases.");
+    else if (genPositive && genNegative) parts.push("Generate both positive and negative test cases.");
+
+    if (genEdgeCase) parts.push("Include edge cases in the test cases.");
+    if (genBoundary) parts.push("Include boundary value tests.");
+
+    if (focusFunctional) parts.push("Focus on functional testing.");
+    if (hasAnyFocus && !focusUI) parts.push("Do NOT generate test cases for visual or image content verification.");
+    if (focusLanguage) parts.push("Include language and spelling verification test cases.");
+    if (focusResponsive) parts.push("Include responsiveness and mobile compatibility test cases.");
+
+    if (genPriority === "high") parts.push("Generate ONLY High priority test cases.");
+    else if (genPriority === "high-medium") parts.push("Generate High and Medium priority test cases only.");
+    else if (genPriority === "all") parts.push("Generate test cases for all priority levels.");
+
+    if (genCount === "few") parts.push("Generate maximum 10 test cases total.");
+    else if (genCount === "medium") parts.push("Generate between 10-20 test cases total.");
+    else if (genCount === "many") parts.push("Generate 20+ test cases.");
+
+    return parts.join(" ");
+  };
+
   // ── Generation ──────────────────────────────────────────────────────────────
 
   const generate = async (fromSelectedTopics = false) => {
     if (!selectedType) return;
     const tab = selectedType;
+    const extraInstructions = buildGenSettingsInstructions() || undefined;
 
     let inputText: string | null = null;
     if (tab === "userstory" && userStoryText.trim()) {
@@ -939,7 +1078,7 @@ export function QAgen({
         const filteredText = await extractSectionsViaClaude(fullDocText, selected.map((tp) => tp.title));
         const effectiveInput = confluencePages.length > 0 ? "" : filteredText;
         const effectiveConfluence = confluencePages.length > 0 ? filteredText : confluenceText;
-        const { result: raw, token_count } = await callClaudeAPI(effectiveInput, format, lang, tab, secondaryText, existingTcText, effectiveConfluence);
+        const { result: raw, token_count } = await callClaudeAPI(effectiveInput, format, lang, tab, secondaryText, existingTcText, effectiveConfluence, extraInstructions);
         setResult(parseTabResult(raw, format));
         setPreviewOpen(true);
         if (userId) {
@@ -960,7 +1099,7 @@ export function QAgen({
             setChunkProgress({ current: i + 1, total });
             const chunkText = confluencePages.length > 0 ? "" : chunks[i];
             const chunkConfluence = confluencePages.length > 0 ? chunks[i] : confluenceText;
-            const { result: raw, token_count } = await callClaudeAPI(chunkText, format, lang, tab, secondaryText, existingTcText, chunkConfluence);
+            const { result: raw, token_count } = await callClaudeAPI(chunkText, format, lang, tab, secondaryText, existingTcText, chunkConfluence, extraInstructions);
             chunkResults.push(parseTabResult(raw, format));
             totalTokens += token_count;
           }
@@ -973,7 +1112,7 @@ export function QAgen({
             void getMonthlyUsageCount(userId).then(setMonthlyCount);
           }
         } else {
-          const { result: raw, token_count } = await callClaudeAPI(inputText, format, lang, tab, secondaryText, existingTcText, confluenceText);
+          const { result: raw, token_count } = await callClaudeAPI(inputText, format, lang, tab, secondaryText, existingTcText, confluenceText, extraInstructions);
           setResult(parseTabResult(raw, format));
           setPreviewOpen(true);
           if (userId) {
@@ -1023,7 +1162,7 @@ export function QAgen({
       {file ? (
         <div className="flex flex-col items-center gap-2">
           <FileText className="h-8 w-8 text-primary" />
-          <p className="font-mono text-sm">{file.name}</p>
+          <p className="text-sm">{file.name}</p>
           <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB · {t.pickAnother}</p>
         </div>
       ) : (
@@ -1056,7 +1195,7 @@ export function QAgen({
         <div className="flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
           <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="font-mono text-sm truncate">{secondaryFile.name}</p>
+            <p className="text-sm truncate">{secondaryFile.name}</p>
             <p className="text-xs text-muted-foreground">{(secondaryFile.size / 1024).toFixed(1)} KB</p>
           </div>
           <button type="button" onClick={() => setSecondaryFile(null)} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors" aria-label="Remove">
@@ -1100,7 +1239,7 @@ export function QAgen({
         <div className="flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
           <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="font-mono text-sm truncate">{existingTcFile.name}</p>
+            <p className="text-sm truncate">{existingTcFile.name}</p>
             <p className="text-xs text-muted-foreground">{(existingTcFile.size / 1024).toFixed(1)} KB</p>
           </div>
           <button type="button" onClick={() => setExistingTcFile(null)} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors" aria-label="Remove">
@@ -1180,7 +1319,7 @@ export function QAgen({
             </div>
             {group.steps[0]?.preconditions && (
               <div className="px-4 py-2 border-b border-border bg-muted/10 text-xs text-muted-foreground">
-                <span className="font-semibold uppercase tracking-wider">{t.preconditions}: </span>
+                <span className="font-medium uppercase tracking-wider">{t.preconditions}: </span>
                 {group.steps[0].preconditions}
               </div>
             )}
@@ -1217,19 +1356,19 @@ export function QAgen({
           <div className="px-4 py-3 space-y-2 text-sm">
             {tc.preconditions && (
               <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.preconditions}: </span>
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t.preconditions}: </span>
                 <span className="text-muted-foreground">{tc.preconditions}</span>
               </div>
             )}
             {tc.steps && (
               <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.steps}: </span>
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t.steps}: </span>
                 <span>{tc.steps}</span>
               </div>
             )}
             {tc.expectedResult && (
               <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.expectedResult}: </span>
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t.expectedResult}: </span>
                 <span className="text-green-700 dark:text-green-400">{tc.expectedResult}</span>
               </div>
             )}
@@ -1262,556 +1401,467 @@ export function QAgen({
     </div>
   );
 
-  // ── Step summary row ────────────────────────────────────────────────────────
-
-  const StepSummary = ({ label, value, onEdit }: { label: string; value: string; onEdit: () => void }) => (
-    <div className="flex items-center justify-between px-5 py-3.5">
-      <div className="flex items-center gap-3">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
-          <Check className="h-3 w-3" />
-        </span>
-        <span className="text-sm text-muted-foreground">{label}:</span>
-        <span className="text-sm font-semibold">{value}</span>
-      </div>
-      <button
-        onClick={onEdit}
-        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
-      >
-        {t.change}
-      </button>
-    </div>
-  );
-
   // ── Main render ─────────────────────────────────────────────────────────────
 
+  const bg   = dark ? '#090c14' : '#f8f9ff';
+  const surf = dark ? '#0f1626' : '#ffffff';
+  const br   = dark ? '#1e2d4a' : '#d0d8f0';
+  const tx   = dark ? '#c8d8f0' : '#1a1e2e';
+  const mu   = dark ? '#8aa6cf' : '#39414f';
+  const su   = dark ? '#9ec4ee' : '#222838';
+  const fmtLabel = format === 'gherkin' ? 'Gherkin' : format === 'zephyr' ? 'Zephyr XLSX' : 'Azure DevOps CSV';
+
   return (
-    <div className="min-h-screen w-full">
-      <div className="mx-auto max-w-3xl px-6 py-8 animate-fade-in">
+    <div className="qa-bg" style={{ minHeight: '100vh', background: bg, color: tx, fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
 
-        {/* Header */}
-        <header className="flex items-center justify-between gap-4 mb-10">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Sparkles className="h-5 w-5" />
+      {/* HEADER */}
+      <header style={{ borderBottom: `1px solid ${br}`, background: dark ? 'rgba(9,12,20,0.95)' : 'rgba(255,255,255,0.95)', position: 'sticky', top: 0, zIndex: 20, backdropFilter: 'blur(10px)' }} className="px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5">
+            <div style={{ border: `1.5px solid ${accentColor}`, borderRadius: 7, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, position: 'relative', color: accentColor, letterSpacing: '-0.05em' }}>
+              QA
+              <div className="dot-pulse" style={{ position: 'absolute', bottom: 3, right: 3, width: 4, height: 4, borderRadius: '50%', background: accentColor }} />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">QAgen</h1>
+            <span style={{ color: tx, fontWeight: 600, fontSize: 15, letterSpacing: '-0.02em' }}>QAgen</span>
           </div>
-          <div className="flex items-center gap-3">
-            <p className="hidden sm:block text-sm text-muted-foreground">{t.subtitle}</p>
-            {isAdmin && onAdminClick && (
-              <button
-                onClick={onAdminClick}
-                title="Admin panel"
-                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                <Settings className="h-4 w-4" />
-                <span className="hidden sm:inline">Admin</span>
-              </button>
-            )}
-            {userEmail && (
-              <span className="hidden md:block text-xs text-muted-foreground max-w-[140px] truncate" title={userEmail}>
-                {userEmail}
-              </span>
-            )}
-            <button
-              onClick={() => setLang((l) => (l === "hu" ? "en" : "hu"))}
-              aria-label={t.toggleLang}
-              title={t.toggleLang}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-base leading-none transition-colors hover:bg-accent"
-            >
-              <span aria-hidden>{lang === "hu" ? "🇭🇺" : "🇬🇧"}</span>
+          <span className="hidden md:block text-sm" style={{ color: mu }}>{t.subtitle}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdmin && onAdminClick && (
+            <button onClick={onAdminClick} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-opacity hover:opacity-70" style={{ color: su, border: `1px solid ${br}`, background: 'transparent', cursor: 'pointer' }}>
+              <Settings className="h-3.5 w-3.5" /><span className="hidden sm:inline">Admin</span>
             </button>
-            <button
-              onClick={() => setDark((d) => !d)}
-              aria-label={t.toggleDark}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            {onSignOut && (
-              <button
-                onClick={() => { void onSignOut?.(); }}
-                title="Kijelentkezés"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                <LogOut className="h-4 w-4" />
+          )}
+          {userEmail && <span className="text-xs hidden lg:block max-w-[160px] truncate" style={{ color: mu }}>{userEmail}</span>}
+          <div style={{ border: `1px solid ${br}`, borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
+            {(['hu', 'en'] as Lang[]).map((l) => (
+              <button key={l} onClick={() => setLang(l)} className="px-2.5 py-1 text-xs font-medium uppercase tracking-wider transition-colors" style={lang === l ? { background: accentColor, color: '#fff' } : { color: mu, background: 'transparent', cursor: 'pointer' }}>
+                {l.toUpperCase()}
               </button>
-            )}
+            ))}
           </div>
-        </header>
+          <button onClick={() => setDark((d) => !d)} style={{ border: `1px solid ${br}`, borderRadius: 8, padding: 6, color: su, background: 'transparent', cursor: 'pointer', display: 'flex' }}>
+            {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+          </button>
+          {onSignOut && (
+            <button onClick={() => { void onSignOut?.(); }} style={{ border: `1px solid ${br}`, borderRadius: 8, padding: 6, color: su, background: 'transparent', cursor: 'pointer', display: 'flex' }}>
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </header>
 
-        {/* Monthly usage */}
-        {userId && (
-          <div className="flex justify-end mb-4">
-            <span className="text-xs text-muted-foreground">
-              {t.monthlyGenerations}:{" "}
-              <span className={monthlyGenerationLimit > 0 && monthlyCount >= monthlyGenerationLimit ? "text-destructive font-semibold" : "font-medium text-foreground"}>
-                {monthlyCount}
-              </span>
-              {" / "}
-              <span className="font-medium text-foreground">
-                {monthlyGenerationLimit === 0 ? t.unlimited : monthlyGenerationLimit}
-              </span>
-            </span>
-          </div>
-        )}
+      {/* MAIN LAYOUT */}
+      <div className="mx-auto px-5 py-8 flex flex-col lg:flex-row gap-6 lg:gap-8 items-start" style={{ maxWidth: 1120 }}>
 
-        <div className="space-y-3">
+        {/* FORM AREA */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
 
-          {/* ── Step 1: Test type ─────────────────────────────────────────────── */}
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            {step1Done ? (
-              <StepSummary
-                label={t.typeLabel}
-                value={typeLabel(selectedType!)}
-                onEdit={() => setStep1Collapsed(false)}
-              />
-            ) : (
-              <div className="p-5 space-y-4">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  1. {t.step1Title}
-                </h2>
+          {/* STEP INDICATOR */}
+          {(() => {
+            const steps = selectedType === 'keyword'
+              ? [{ n: '01', label: t.step1Title, done: step1Done }, { n: '02', label: t.step2Title, done: step2Done && step1Done }, { n: '03', label: t.step3Title, done: false }, { n: '04', label: t.step4Title, done: false }]
+              : [{ n: '01', label: t.step1Title, done: step1Done }, { n: '02', label: t.step3Title, done: false }, { n: '03', label: t.step4Title, done: false }];
+            return (
+              <div className="flex items-center mb-1" style={{ overflowX: 'auto' }}>
+                {steps.map((step, i) => (
+                  <div key={step.n} className="flex items-center">
+                    {i > 0 && <div style={{ width: 20, height: 1, background: br, flexShrink: 0 }} />}
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: step.done ? `${accentColor}18` : 'transparent' }}>
+                      <span className="text-sm font-semibold" style={{ color: step.done ? accentColor : mu }}>{step.n}</span>
+                      <span className="text-sm hidden sm:block" style={{ color: step.done ? accentColor : mu }}>{step.label}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* STEP 1: TYPE */}
+          {step1Done ? (
+            <div className="rounded-xl px-5 py-3 flex items-center justify-between fade-up" style={{ border: `1px solid ${br}`, background: dark ? '#0c1428' : '#f8f9ff' }}>
+              <div className="flex items-center gap-3">
+                <div style={{ width: 20, height: 20, borderRadius: 4, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Check className="h-2.5 w-2.5 text-white" /></div>
+                <span className="text-sm tracking-wide uppercase" style={{ color: mu, fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>01 {t.step1Title}:</span>
+                <span className="text-base font-semibold" style={{ color: tx }}>{typeLabel(selectedType!)}</span>
+              </div>
+              <button onClick={() => setStep1Collapsed(false)} className="text-xs underline underline-offset-2 transition-opacity hover:opacity-60" style={{ color: mu, background: 'none', border: 'none', cursor: 'pointer' }}>{t.change}</button>
+            </div>
+          ) : (
+            <div className="rounded-xl overflow-hidden fade-up" style={{ border: `1px solid ${br}` }}>
+              <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${br}`, background: dark ? '#090c14' : '#fafafa' }}>
+                <span className="text-sm font-semibold" style={{ color: accentColor }}>01 — {t.step1Title}</span>
+              </div>
+              <div className="p-5" style={{ background: surf }}>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {(
-                    [
-                      { type: "quick" as TabType, title: t.quickTest, desc: t.quickTestDesc },
-                      { type: "keyword" as TabType, title: t.keyword, desc: t.keywordDesc },
-                      { type: "userstory" as TabType, title: t.userStory, desc: t.userStoryDesc },
-                    ] as const
-                  ).map(({ type, title, desc }) => (
-                    <button
-                      key={type}
-                      onClick={() => handleSelectType(type)}
-                      className={`relative flex flex-col gap-1.5 rounded-lg border-2 p-4 text-left transition-all ${
-                        selectedType === type
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/40 hover:bg-accent/40"
-                      }`}
-                    >
-                      {selectedType === type && (
-                        <span className="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                          <Check className="h-2.5 w-2.5" />
-                        </span>
-                      )}
-                      <span className="font-semibold text-sm pr-5">{title}</span>
-                      <span className="text-xs text-muted-foreground leading-relaxed">{desc}</span>
-                    </button>
-                  ))}
+                  {([{ type: 'quick' as TabType, title: t.quickTest, desc: t.quickTestDesc }, { type: 'keyword' as TabType, title: t.keyword, desc: t.keywordDesc }, { type: 'userstory' as TabType, title: t.userStory, desc: t.userStoryDesc }] as const).map(({ type, title, desc }) => {
+                    const sel = selectedType === type;
+                    return (
+                      <button key={type} onClick={() => handleSelectType(type)} className={`type-card${sel ? ' card-selected' : ''} relative flex flex-col gap-1.5 rounded-lg p-4 text-left`} style={{ border: `1.5px solid ${sel ? accentColor : br}`, background: sel ? (dark ? '#0d1a38' : '#eff3ff') : (dark ? '#111b2e' : '#fafafa'), cursor: 'pointer' }}>
+                        {sel && <span style={{ position: 'absolute', right: 10, top: 10, width: 16, height: 16, borderRadius: '50%', background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check className="h-2 w-2 text-white" /></span>}
+                        <span className="font-semibold text-sm pr-5" style={{ color: tx }}>{title}</span>
+                        <span className="text-xs leading-relaxed" style={{ color: mu }}>{desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* ── Step 2: Keyword mode ──────────────────────────────────────────── */}
+          {/* STEP 2: KEYWORD MODE */}
           {step2Visible && (
-            <div className="rounded-xl border border-border bg-card overflow-hidden">
-              {step2Done ? (
-                <StepSummary
-                  label={t.modeLabel}
-                  value={modeLabel(keywordMode!)}
-                  onEdit={() => setStep2Collapsed(false)}
-                />
-              ) : (
-                <div className="p-5 space-y-4">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    2. {t.step2Title}
-                  </h2>
+            step2Done ? (
+              <div className="rounded-xl px-5 py-3 flex items-center justify-between fade-up" style={{ border: `1px solid ${br}`, background: dark ? '#0c1428' : '#f8f9ff' }}>
+                <div className="flex items-center gap-3">
+                  <div style={{ width: 20, height: 20, borderRadius: 4, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Check className="h-2.5 w-2.5 text-white" /></div>
+                  <span className="text-sm tracking-wide uppercase" style={{ color: mu, fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>02 {t.step2Title}:</span>
+                  <span className="text-base font-semibold" style={{ color: tx }}>{modeLabel(keywordMode!)}</span>
+                </div>
+                <button onClick={() => setStep2Collapsed(false)} className="text-xs underline underline-offset-2 transition-opacity hover:opacity-60" style={{ color: mu, background: 'none', border: 'none', cursor: 'pointer' }}>{t.change}</button>
+              </div>
+            ) : (
+              <div className="rounded-xl overflow-hidden fade-up" style={{ border: `1px solid ${br}` }}>
+                <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${br}`, background: dark ? '#090c14' : '#fafafa' }}>
+                  <span className="text-sm font-semibold" style={{ color: accentColor }}>02 — {t.step2Title}</span>
+                </div>
+                <div className="p-5" style={{ background: surf }}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {(
-                      [
-                        { mode: "new" as KeywordMode, title: t.modeNew },
-                        { mode: "expand" as KeywordMode, title: t.modeExpand },
-                      ] as const
-                    ).map(({ mode, title }) => (
-                      <button
-                        key={mode}
-                        onClick={() => handleSelectKeywordMode(mode)}
-                        className={`relative flex items-center gap-3 rounded-lg border-2 p-4 text-left transition-all ${
-                          keywordMode === mode
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/40 hover:bg-accent/40"
-                        }`}
-                      >
-                        {keywordMode === mode && (
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
-                            <Check className="h-2.5 w-2.5" />
-                          </span>
-                        )}
-                        <span className="font-semibold text-sm">{title}</span>
-                      </button>
-                    ))}
+                    {([{ mode: 'new' as KeywordMode, title: t.modeNew }, { mode: 'expand' as KeywordMode, title: t.modeExpand }] as const).map(({ mode, title }) => {
+                      const sel = keywordMode === mode;
+                      return (
+                        <button key={mode} onClick={() => handleSelectKeywordMode(mode)} className="type-card relative flex items-center gap-3 rounded-lg p-4 text-left" style={{ border: `1.5px solid ${sel ? accentColor : br}`, background: sel ? (dark ? '#0d1a38' : '#eff3ff') : (dark ? '#111b2e' : '#fafafa'), cursor: 'pointer' }}>
+                          {sel && <span style={{ width: 16, height: 16, borderRadius: '50%', background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Check className="h-2 w-2 text-white" /></span>}
+                          <span className="font-semibold text-sm" style={{ color: tx }}>{title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* GENERATION SETTINGS */}
+          {sourcesVisible && (
+            <div className="rounded-xl overflow-hidden fade-up" style={{ border: `1px solid ${br}` }}>
+              <button onClick={() => setGenSettingsOpen(!genSettingsOpen)} className="flex items-center justify-between w-full px-5 py-3 text-left transition-opacity hover:opacity-80" style={{ background: dark ? '#090c14' : '#fafafa', borderBottom: genSettingsOpen ? `1px solid ${br}` : 'none', cursor: 'pointer' }}>
+                <span className="text-xs tracking-widest font-medium uppercase" style={{ color: mu }}>{t.genSettingsTitle}</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${genSettingsOpen ? 'rotate-180' : ''}`} style={{ color: mu }} />
+              </button>
+              {genSettingsOpen && (
+                <div className="p-5" style={{ background: surf }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+                    <div className="space-y-2.5">
+                      <p className="text-xs font-medium uppercase tracking-widest" style={{ color: mu }}>{t.genSettingsTcTypes}</p>
+                      {([{ key: 'positive', label: t.tcTypePositive, val: genPositive, set: setGenPositive }, { key: 'negative', label: t.tcTypeNegative, val: genNegative, set: setGenNegative }, { key: 'edge', label: t.tcTypeEdgeCase, val: genEdgeCase, set: setGenEdgeCase }, { key: 'boundary', label: t.tcTypeBoundary, val: genBoundary, set: setGenBoundary }] as Array<{ key: string; label: string; val: boolean; set: (v: boolean) => void }>).map(({ key, label, val, set }) => (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer"><input type="checkbox" checked={val} onChange={(e) => set(e.target.checked)} className="h-4 w-4 rounded accent-primary cursor-pointer" /><span className="text-sm" style={{ color: tx }}>{label}</span></label>
+                      ))}
+                    </div>
+                    <div className="space-y-2.5">
+                      <p className="text-xs font-medium uppercase tracking-widest" style={{ color: mu }}>{t.genSettingsFocusAreas}</p>
+                      {([{ key: 'functional', label: t.focusFunctional, val: focusFunctional, set: setFocusFunctional }, { key: 'ui', label: t.focusUI, val: focusUI, set: setFocusUI }, { key: 'language', label: t.focusLanguage, val: focusLanguage, set: setFocusLanguage }, { key: 'responsive', label: t.focusResponsive, val: focusResponsive, set: setFocusResponsive }] as Array<{ key: string; label: string; val: boolean; set: (v: boolean) => void }>).map(({ key, label, val, set }) => (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer"><input type="checkbox" checked={val} onChange={(e) => set(e.target.checked)} className="h-4 w-4 rounded accent-primary cursor-pointer" /><span className="text-sm" style={{ color: tx }}>{label}</span></label>
+                      ))}
+                    </div>
+                    <div className="space-y-2.5">
+                      <p className="text-xs font-medium uppercase tracking-widest" style={{ color: mu }}>{t.genSettingsPriority}</p>
+                      {([{ key: 'high' as const, label: t.priorityHigh }, { key: 'high-medium' as const, label: t.priorityHighMedium }, { key: 'all' as const, label: t.priorityAll }]).map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer"><input type="radio" name="gen-priority" checked={genPriority === key} onChange={() => { /* onClick controlled */ }} onClick={() => setGenPriority(genPriority === key ? null : key)} className="h-4 w-4 accent-primary cursor-pointer" /><span className="text-sm" style={{ color: tx }}>{label}</span></label>
+                      ))}
+                    </div>
+                    <div className="space-y-2.5">
+                      <p className="text-xs font-medium uppercase tracking-widest" style={{ color: mu }}>{t.genSettingsCount}</p>
+                      {([{ key: 'few' as const, label: t.countFew }, { key: 'medium' as const, label: t.countMedium }, { key: 'many' as const, label: t.countMany }]).map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer"><input type="radio" name="gen-count" checked={genCount === key} onChange={() => { /* onClick controlled */ }} onClick={() => setGenCount(genCount === key ? null : key)} className="h-4 w-4 accent-primary cursor-pointer" /><span className="text-sm" style={{ color: tx }}>{label}</span></label>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Step 3: Sources ───────────────────────────────────────────────── */}
+          {/* STEP 3: SOURCES */}
           {sourcesVisible && (
-            <div className="rounded-xl border border-border bg-card p-5 space-y-5">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {stepNums.sources}. {t.step3Title}
-              </h2>
-
-              {selectedType === "userstory" ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                      {t.textInputLabel}
-                    </label>
-                    <Textarea
-                      value={userStoryText}
-                      onChange={(e) => setUserStoryText(e.target.value)}
-                      placeholder={t.userStoryPlaceholder}
-                      className="min-h-[100px] resize-y font-mono text-sm"
-                    />
+            <div className="rounded-xl overflow-hidden fade-up" style={{ border: `1px solid ${br}` }}>
+              <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${br}`, background: dark ? '#090c14' : '#fafafa' }}>
+                <span className="text-sm font-semibold" style={{ color: accentColor }}>{stepNums.sources === 3 ? '03' : '02'} — {t.step3Title}</span>
+              </div>
+              <div className="p-5 space-y-4" style={{ background: surf }}>
+                {selectedType === 'userstory' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-medium uppercase tracking-widest block mb-1.5" style={{ color: mu }}>{t.textInputLabel}</label>
+                      <Textarea value={userStoryText} onChange={(e) => setUserStoryText(e.target.value)} placeholder={t.userStoryPlaceholder} className="min-h-[100px] resize-y text-sm" />
+                    </div>
+                    <div className="flex items-center gap-3 text-xs" style={{ color: mu }}>
+                      <div className="flex-1 border-t" style={{ borderColor: br }} /><span>{t.orSeparator}</span><div className="flex-1 border-t" style={{ borderColor: br }} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium uppercase tracking-widest block mb-1.5" style={{ color: mu }}>{t.fileLabel}</label>
+                      <PrimaryUploadZone />
+                    </div>
+                    {confluenceEnabled && (
+                      <button type="button" onClick={() => setShowConfluenceModal(true)} className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-80" style={{ border: `1px solid ${br}`, background: dark ? '#111b2e' : '#fafafa', color: tx, cursor: 'pointer' }}>
+                        <span className="text-base leading-none">📄</span>{confluencePages.length > 0 ? `Confluence (${confluencePages.length})` : t.confluencePages}
+                      </button>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <div className="flex-1 border-t border-border" />
-                    <span>{t.orSeparator}</span>
-                    <div className="flex-1 border-t border-border" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                      {t.fileLabel}
-                    </label>
-                    <PrimaryUploadZone />
-                  </div>
-                  {confluenceEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => setShowConfluenceModal(true)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <span className="text-base leading-none">📄</span>
-                      {confluencePages.length > 0 ? `Confluence (${confluencePages.length})` : t.confluencePages}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {selectedType === "keyword" && keywordMode === "expand" && (
-                    <ExistingTcUploadZone />
-                  )}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                      {t.specLabel}
-                    </label>
-                    <PrimaryUploadZone />
-                  </div>
-                  {confluenceEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => setShowConfluenceModal(true)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <span className="text-base leading-none">📄</span>
-                      {confluencePages.length > 0 ? `Confluence (${confluencePages.length})` : t.confluencePages}
-                    </button>
-                  )}
-                  <SecondaryUploadZone />
-                  {playwrightEnabled && (
-                    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          {t.playwrightSectionTitle}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{t.playwrightSectionDesc}</p>
+                ) : (
+                  <div className="space-y-4">
+                    {selectedType === 'keyword' && keywordMode === 'expand' && <ExistingTcUploadZone />}
+                    <div>
+                      <label className="text-xs font-medium uppercase tracking-widest block mb-1.5" style={{ color: mu }}>{t.specLabel}</label>
+                      <PrimaryUploadZone />
+                    </div>
+                    {confluenceEnabled && (
+                      <button type="button" onClick={() => setShowConfluenceModal(true)} className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-80" style={{ border: `1px solid ${br}`, background: dark ? '#111b2e' : '#fafafa', color: tx, cursor: 'pointer' }}>
+                        <span className="text-base leading-none">📄</span>{confluencePages.length > 0 ? `Confluence (${confluencePages.length})` : t.confluencePages}
+                      </button>
+                    )}
+                    <SecondaryUploadZone />
+                    {playwrightEnabled && (
+                      <div className="space-y-3 rounded-lg p-4" style={{ border: `1px solid ${br}`, background: dark ? '#0a1020' : '#f8f9ff' }}>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-widest" style={{ color: mu }}>{t.playwrightSectionTitle}</p>
+                          <p className="text-xs mt-0.5" style={{ color: mu }}>{t.playwrightSectionDesc}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <input type="url" value={playwrightUrlInput} onChange={(e) => { setPlaywrightUrlInput(e.target.value); setPlaywrightUrlError(null); }} onKeyDown={(e) => e.key === 'Enter' && addPlaywrightUrl()} placeholder={t.playwrightPlaceholder} className="flex h-9 flex-1 rounded-md border bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" style={{ borderColor: br }} />
+                          <button type="button" onClick={addPlaywrightUrl} className="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium transition-opacity hover:opacity-80" style={{ border: `1px solid ${br}`, background: dark ? '#111b2e' : '#fafafa', color: tx, cursor: 'pointer' }}>{t.playwrightAdd}</button>
+                        </div>
+                        {playwrightUrlError && <p className="text-xs" style={{ color: '#ef4444' }}>{playwrightUrlError}</p>}
+                        {playwrightUrls.length > 0 && (
+                          <ul className="space-y-1.5">
+                            {playwrightUrls.map((url) => (
+                              <li key={url} className="flex items-center gap-2 rounded-md px-3 py-2" style={{ border: `1px solid ${br}`, background: dark ? '#0d1628' : '#ffffff' }}>
+                                <span className="flex-1 truncate text-xs" style={{ color: tx }}>{url}</span>
+                                <button type="button" onClick={() => setPlaywrightUrls((prev) => prev.filter((u) => u !== url))} className="shrink-0 transition-colors hover:text-red-500" style={{ color: mu, background: 'none', border: 'none', cursor: 'pointer' }} aria-label="Remove URL"><X className="h-3.5 w-3.5" /></button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <p className="text-xs leading-relaxed" style={{ color: mu }}>{t.playwrightNote}</p>
                       </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="url"
-                          value={playwrightUrlInput}
-                          onChange={(e) => { setPlaywrightUrlInput(e.target.value); setPlaywrightUrlError(null); }}
-                          onKeyDown={(e) => e.key === "Enter" && addPlaywrightUrl()}
-                          placeholder={t.playwrightPlaceholder}
-                          className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                        <button
-                          type="button"
-                          onClick={addPlaywrightUrl}
-                          className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                        >
-                          {t.playwrightAdd}
+                    )}
+                  </div>
+                )}
+
+                {/* Analyse button */}
+                {canAnalyseDoc() && (
+                  <div>
+                    <button type="button" onClick={() => { void analyseDocument(); }} disabled={analysing || loading} className="inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40" style={{ border: `1px solid ${br}`, background: dark ? '#111b2e' : '#fafafa', color: tx, cursor: 'pointer' }}>
+                      {analysing ? <><Loader2 className="h-4 w-4 animate-spin" />{t.analysing}</> : <><span className="text-base leading-none">📋</span>{t.analyse}</>}
+                    </button>
+                  </div>
+                )}
+
+                {/* Topic checklist */}
+                {docTopics.length > 0 && (
+                  <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${br}` }}>
+                    <button type="button" onClick={() => setStructureOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: tx, background: dark ? '#0c1428' : '#f8f9ff', cursor: 'pointer' }}>
+                      <span className="flex items-center gap-2">
+                        <span className="text-base leading-none">📋</span>{t.docStructure}
+                        <span className="text-xs font-normal" style={{ color: mu }}>({selectedTopicIds.size}/{docTopics.length})</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); const allSel = selectedTopicIds.size === docTopics.length; setSelectedTopicIds(allSel ? new Set() : new Set(docTopics.map((tp) => tp.id))); }} className="text-xs hover:underline" style={{ color: accentColor, background: 'none', border: 'none', cursor: 'pointer' }}>
+                          {selectedTopicIds.size === docTopics.length ? t.deselectAll : t.selectAll}
+                        </button>
+                        <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${structureOpen ? 'rotate-180' : ''}`} style={{ color: mu }} />
+                      </div>
+                    </button>
+                    {structureOpen && (
+                      <div style={{ borderTop: `1px solid ${br}` }}>
+                        {docTopics.map((topic) => (
+                          <label key={topic.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-opacity hover:opacity-80" style={{ borderBottom: `1px solid ${br}` }}>
+                            <input type="checkbox" checked={selectedTopicIds.has(topic.id)} onChange={(e) => { setSelectedTopicIds((prev) => { const next = new Set(prev); if (e.target.checked) next.add(topic.id); else next.delete(topic.id); return next; }); }} className="h-4 w-4 rounded accent-primary" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium" style={{ color: tx }}>{topic.id}. {topic.title}</span>
+                              {topic.pages && <span className="ml-2 text-xs" style={{ color: mu }}>({topic.pages}. {t.page})</span>}
+                            </div>
+                          </label>
+                        ))}
+                        <div className="px-4 py-3" style={{ borderTop: `1px solid ${br}` }}>
+                          <button type="button" onClick={() => { void generate(true); }} disabled={selectedTopicIds.size === 0 || loading || analysing} className="w-full h-10 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2" style={{ background: accentColor, cursor: 'pointer' }}>
+                            {loading ? <><Loader2 className="h-4 w-4 animate-spin" />{chunkProgress ? t.chunkProgress(chunkProgress.current, chunkProgress.total) : t.generating}</> : t.generateFromSelected}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: FORMAT & GENERATE */}
+          {sourcesVisible && (
+            <div className="rounded-xl overflow-hidden fade-up" style={{ border: `1px solid ${br}` }}>
+              <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${br}`, background: dark ? '#090c14' : '#fafafa' }}>
+                <span className="text-sm font-semibold" style={{ color: accentColor }}>{stepNums.format === 4 ? '04' : '03'} — {t.step4Title}</span>
+              </div>
+              <div className="p-5 space-y-4" style={{ background: surf }}>
+                {/* Format buttons */}
+                <div>
+                  <label className="text-xs font-medium uppercase tracking-widest block mb-2" style={{ color: mu }}>{t.formatLabel}</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([{ val: 'gherkin' as Format, label: 'Gherkin' }, { val: 'zephyr' as Format, label: 'Zephyr XLSX' }, { val: 'azurecsv' as Format, label: 'Azure DevOps CSV' }]).map(({ val, label }) => {
+                      const sel = format === val;
+                      return (
+                        <button key={val} onClick={() => { setFormat(val); setResult(null); }} className="rounded-lg px-3 py-2 text-xs text-left transition-opacity hover:opacity-80" style={{ border: `1px solid ${sel ? accentColor : br}`, background: sel ? (dark ? '#0d1a38' : '#eff3ff') : (dark ? '#111b2e' : '#fafafa'), color: sel ? accentColor : mu, cursor: 'pointer' }}>{label}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Area Path */}
+                {format === 'azurecsv' && (
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-widest block mb-1.5" style={{ color: mu }}>{t.areaPath}</label>
+                    <input type="text" value={areaPath} onChange={(e) => setAreaPath(e.target.value)} placeholder={t.areaPathPlaceholder} className="flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" style={{ borderColor: br, background: dark ? '#111b2e' : '#ffffff', color: tx }} />
+                  </div>
+                )}
+
+                {/* Generate + Download */}
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => { void generate(); }} disabled={!canGenerate() || loading || analysing || playwrightScraping} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2" style={{ background: accentColor, minWidth: 180, cursor: 'pointer' }}>
+                    {playwrightScraping ? <><Loader2 className="h-4 w-4 animate-spin" />{t.playwrightScraping}</> : loading && chunkProgress ? <><Loader2 className="h-4 w-4 animate-spin" />{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</> : loading ? <><Loader2 className="h-4 w-4 animate-spin" />{t.generating}</> : t.generate}
+                  </button>
+                  <button onClick={() => { void downloadResult(); }} disabled={!hasResult()} className="h-11 px-4 rounded-lg text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2" style={{ border: `1px solid ${br}`, background: dark ? '#111b2e' : '#fafafa', color: tx, cursor: 'pointer' }} title={t.download}>
+                    <Download className="h-4 w-4" /><span className="hidden sm:inline">{t.download}</span>
+                  </button>
+                </div>
+
+                {/* Chunk progress */}
+                {loading && chunkProgress && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs" style={{ color: mu }}>
+                      <span>{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</span>
+                      <span>{Math.round((chunkProgress.current / chunkProgress.total) * 100)}%</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: br }}>
+                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(chunkProgress.current / chunkProgress.total) * 100}%`, background: accentColor }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Error */}
+                {error && (
+                  <div className="rounded-lg p-4 flex gap-3" style={{ border: '1px solid #fca5a5', background: dark ? '#1a0808' : '#fff1f1' }}>
+                    <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
+                    <div>
+                      <p className="font-semibold text-sm" style={{ color: dark ? '#fca5a5' : '#b91c1c' }}>{t.error}</p>
+                      <p className="text-xs mt-1" style={{ color: dark ? '#f87171' : '#dc2626' }}>{error}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result preview */}
+                {hasResult() && (
+                  <div className="fade-up">
+                    <button type="button" onClick={() => setPreviewOpen((o) => !o)} className="flex w-full items-center justify-between rounded-lg px-4 py-3 text-sm font-medium transition-opacity hover:opacity-80" style={{ border: `1px solid ${br}`, background: dark ? '#0c1428' : '#f8f9ff', color: tx, cursor: 'pointer' }}>
+                      <span>{previewOpen ? t.hidePreview : t.showPreview}</span>
+                      <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${previewOpen ? 'rotate-180' : ''}`} style={{ color: mu }} />
+                    </button>
+                    {previewOpen && (
+                      <div className="mt-3 space-y-3">
+                        {result!.keywordSteps ? <KeywordPreview steps={result!.keywordSteps} /> : result!.testCases ? <ZephyrPreview cases={result!.testCases} /> : result!.azureCases ? <AzurePreview cases={result!.azureCases} /> : result!.gherkinResult ? <GherkinPreview text={result!.gherkinResult} /> : null}
+                        <button onClick={() => { void downloadResult(); }} className="w-full h-9 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-80 flex items-center justify-center gap-2" style={{ background: accentColor, cursor: 'pointer' }}>
+                          <Download className="h-4 w-4" />{t.downloadFile}
                         </button>
                       </div>
-                      {playwrightUrlError && (
-                        <p className="text-xs text-destructive">{playwrightUrlError}</p>
-                      )}
-                      {playwrightUrls.length > 0 && (
-                        <ul className="space-y-1.5">
-                          {playwrightUrls.map((url) => (
-                            <li key={url} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
-                              <span className="flex-1 truncate font-mono text-xs">{url}</span>
-                              <button
-                                type="button"
-                                onClick={() => setPlaywrightUrls((prev) => prev.filter((u) => u !== url))}
-                                className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                                aria-label="Remove URL"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <p className="text-xs text-muted-foreground leading-relaxed">{t.playwrightNote}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Analyse button */}
-              {canAnalyseDoc() && (
-                <div>
-                  <Button
-                    variant="outline"
-                    onClick={() => { void analyseDocument(); }}
-                    disabled={analysing || loading}
-                    className="h-10 px-4 text-sm font-medium"
-                  >
-                    {analysing ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        {t.analysing}
-                      </>
-                    ) : (
-                      <>
-                        <span className="mr-1.5 text-base leading-none">📋</span>
-                        {t.analyse}
-                      </>
                     )}
-                  </Button>
-                </div>
-              )}
-
-              {/* Topic checklist */}
-              {docTopics.length > 0 && (
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setStructureOpen((o) => !o)}
-                    className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="text-base leading-none">📋</span>
-                      {t.docStructure}
-                      <span className="text-xs text-muted-foreground font-normal">
-                        ({selectedTopicIds.size}/{docTopics.length})
-                      </span>
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const allSelected = selectedTopicIds.size === docTopics.length;
-                          setSelectedTopicIds(allSelected ? new Set() : new Set(docTopics.map((tp) => tp.id)));
-                        }}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        {selectedTopicIds.size === docTopics.length ? t.deselectAll : t.selectAll}
-                      </button>
-                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${structureOpen ? "rotate-180" : ""}`} />
-                    </div>
-                  </button>
-                  {structureOpen && (
-                    <div className="border-t border-border divide-y divide-border">
-                      {docTopics.map((topic) => (
-                        <label key={topic.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={selectedTopicIds.has(topic.id)}
-                            onChange={(e) => {
-                              setSelectedTopicIds((prev) => {
-                                const next = new Set(prev);
-                                if (e.target.checked) next.add(topic.id); else next.delete(topic.id);
-                                return next;
-                              });
-                            }}
-                            className="h-4 w-4 rounded border-border accent-primary"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium">{topic.id}. {topic.title}</span>
-                            {topic.pages && (
-                              <span className="ml-2 text-xs text-muted-foreground">({topic.pages}. {t.page})</span>
-                            )}
-                          </div>
-                        </label>
-                      ))}
-                      <div className="px-4 py-3">
-                        <Button
-                          onClick={() => { void generate(true); }}
-                          disabled={selectedTopicIds.size === 0 || loading || analysing}
-                          className="w-full h-10 text-sm font-semibold"
-                        >
-                          {loading ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              {chunkProgress ? t.chunkProgress(chunkProgress.current, chunkProgress.total) : t.generating}
-                            </>
-                          ) : (
-                            t.generateFromSelected
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Step 4: Format & Generate ─────────────────────────────────────── */}
-          {sourcesVisible && (
-            <div className="rounded-xl border border-border bg-card p-5 space-y-5">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {stepNums.format}. {t.step4Title}
-              </h2>
-
-              {/* Format selector */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                  {t.formatLabel}
-                </label>
-                <Select
-                  value={format}
-                  onValueChange={(v) => { setFormat(v as Format); setResult(null); }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="gherkin">Gherkin</SelectItem>
-                    <SelectItem value="zephyr">Zephyr XLSX</SelectItem>
-                    <SelectItem value="azurecsv">Azure DevOps CSV</SelectItem>
-                  </SelectContent>
-                </Select>
+                  </div>
+                )}
               </div>
-
-              {/* Area Path (Azure only) */}
-              {format === "azurecsv" && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                    {t.areaPath}
-                  </label>
-                  <input
-                    type="text"
-                    value={areaPath}
-                    onChange={(e) => setAreaPath(e.target.value)}
-                    placeholder={t.areaPathPlaceholder}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  />
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  onClick={() => { void generate(); }}
-                  disabled={!canGenerate() || loading || analysing || playwrightScraping}
-                  className="flex-1 h-11 text-sm font-semibold"
-                >
-                  {playwrightScraping ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />{t.playwrightScraping}</>
-                  ) : loading && chunkProgress ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</>
-                  ) : loading ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />{t.generating}</>
-                  ) : (
-                    t.generate
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => { void downloadResult(); }}
-                  disabled={!hasResult()}
-                  className="h-11 px-4 text-sm font-medium"
-                  title={t.download}
-                >
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline ml-1">{t.download}</span>
-                </Button>
-              </div>
-
-              {/* Chunk progress bar */}
-              {loading && chunkProgress && (
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{t.chunkProgress(chunkProgress.current, chunkProgress.total)}</span>
-                    <span>{Math.round((chunkProgress.current / chunkProgress.total) * 100)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-500"
-                      style={{ width: `${(chunkProgress.current / chunkProgress.total) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Error */}
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-4">
-                  <div className="flex gap-3">
-                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-red-900 dark:text-red-200 text-sm">{t.error}</p>
-                      <p className="text-xs text-red-800 dark:text-red-300 mt-1">{error}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Collapsible result preview */}
-              {hasResult() && (
-                <div className="animate-fade-in">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewOpen((o) => !o)}
-                    className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <span>{previewOpen ? t.hidePreview : t.showPreview}</span>
-                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${previewOpen ? "rotate-180" : ""}`} />
-                  </button>
-
-                  {previewOpen && (
-                    <div className="mt-3 space-y-3">
-                      {result!.keywordSteps ? (
-                        <KeywordPreview steps={result!.keywordSteps} />
-                      ) : result!.testCases ? (
-                        <ZephyrPreview cases={result!.testCases} />
-                      ) : result!.azureCases ? (
-                        <AzurePreview cases={result!.azureCases} />
-                      ) : result!.gherkinResult ? (
-                        <GherkinPreview text={result!.gherkinResult} />
-                      ) : null}
-                      <Button onClick={() => { void downloadResult(); }} className="w-full mt-1" size="sm">
-                        <Download className="h-4 w-4" />
-                        {t.downloadFile}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
         </div>
 
-        <footer className="mt-16 text-center text-xs text-muted-foreground">
-          {t.footer}
-        </footer>
+        {/* SIDEBAR */}
+        <div className="w-full lg:w-[268px] lg:flex-shrink-0">
+          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${br}`, position: 'sticky', top: 68 }}>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${br}`, background: dark ? '#090c14' : '#fafafa' }}>
+              <span className="text-xs tracking-widest font-medium" style={{ color: accentColor }}>{t.summary}</span>
+            </div>
+            <div className="p-4 space-y-3" style={{ background: surf }}>
+              {selectedType && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: mu }}>{t.typeLbl}</span>
+                    <span className="text-sm font-medium" style={{ color: su }}>{typeLabel(selectedType)}</span>
+                  </div>
+                  {step2Done && keywordMode && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm" style={{ color: mu }}>{t.modeLbl}</span>
+                      <span className="text-sm font-medium" style={{ color: su }}>{modeLabel(keywordMode)}</span>
+                    </div>
+                  )}
+                  {sourcesVisible && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm" style={{ color: mu }}>{t.fmtLbl}</span>
+                      <span className="text-sm font-medium" style={{ color: su }}>{fmtLabel}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {selectedType && <div style={{ height: 1, background: br }} />}
+              {userId && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm" style={{ color: mu }}>{t.monthlyGenerations}</span>
+                    <span className="text-sm" style={{ color: su }}>{monthlyCount}{monthlyGenerationLimit > 0 ? ` / ${monthlyGenerationLimit}` : ''}</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: br }}>
+                    <div style={{ width: `${monthlyGenerationLimit > 0 ? Math.min(100, (monthlyCount / monthlyGenerationLimit) * 100) : 0}%`, height: '100%', background: accentColor, borderRadius: 999 }} />
+                  </div>
+                  <span className="text-xs mt-1 block" style={{ color: mu }}>{monthlyCount} {t.used}</span>
+                </div>
+              )}
+              {hasResult() && (
+                <>
+                  <div style={{ height: 1, background: br }} />
+                  <div className="flex items-center gap-2">
+                    <div className="dot-pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: accentColor, flexShrink: 0 }} />
+                    <span className="text-xs" style={{ color: accentColor }}>{t.generated}</span>
+                  </div>
+                </>
+              )}
+              {selectedType && (
+                <>
+                  <div style={{ height: 1, background: br }} />
+                  <button onClick={handleReset} className="text-xs text-left transition-colors hover:text-red-500 w-full" style={{ color: mu, background: 'none', border: 'none', cursor: 'pointer' }}>↺ {t.reset}</button>
+                </>
+              )}
+            </div>
+            <div className="px-4 py-2 text-xs" style={{ borderTop: `1px solid ${br}`, background: dark ? '#090c14' : '#f5f5f5', color: dark ? '#2a4a6e' : '#a0aab8' }}>{t.footer}</div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* TWEAKS PANEL */}
+      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50 }}>
+        {tweaksOpen && (
+          <div className="rounded-xl p-4 mb-2 fade-up" style={{ background: surf, border: `1px solid ${br}`, minWidth: 180, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+            <p className="text-xs tracking-widest mb-3 uppercase" style={{ color: mu }}>Accent color</p>
+            <div className="flex flex-wrap gap-2">
+              {([{ color: '#3b7ff5', name: 'Blue' }, { color: '#6366f1', name: 'Indigo' }, { color: '#10b981', name: 'Terminal' }, { color: '#14b8a6', name: 'Teal' }, { color: '#f59e0b', name: 'Amber' }, { color: '#f43f5e', name: 'Rose' }]).map(({ color, name }) => (
+                <button key={color} onClick={() => setAccentColor(color)} title={name} className="transition-transform hover:scale-110" style={{ width: 22, height: 22, borderRadius: '50%', background: color, border: accentColor === color ? `2px solid ${tx}` : '2px solid transparent', outline: 'none', cursor: 'pointer' }} />
+              ))}
+            </div>
+          </div>
+        )}
+        <button onClick={() => setTweaksOpen(!tweaksOpen)} className="flex items-center justify-center rounded-full w-10 h-10 transition-opacity hover:opacity-80" style={{ background: accentColor, color: '#fff', boxShadow: '0 4px 16px rgba(59,127,245,0.4)', border: 'none', cursor: 'pointer' }}>
+          <Settings className="h-4 w-4" />
+        </button>
       </div>
 
       {showConfluenceModal && userId && confluenceEnabled && (
-        <ConfluenceModal
-          userId={userId}
-          lang={lang}
-          selectedPages={confluencePages}
-          onSave={setConfluencePages}
-          onClose={() => setShowConfluenceModal(false)}
-        />
+        <ConfluenceModal userId={userId} lang={lang} selectedPages={confluencePages} onSave={setConfluencePages} onClose={() => setShowConfluenceModal(false)} />
       )}
     </div>
   );
