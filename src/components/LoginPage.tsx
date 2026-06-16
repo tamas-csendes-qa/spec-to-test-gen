@@ -10,7 +10,8 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ dark, onToggleDark }: LoginPageProps) {
-  const { signIn } = useAuth();
+  const { signIn, user, profile } = useAuth();
+  const logoTarget: "/app" | "/" = user && profile ? "/app" : "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -68,20 +69,25 @@ export function LoginPage({ dark, onToggleDark }: LoginPageProps) {
         className="sticky top-0 z-20 flex items-center justify-between px-6"
         style={{ height: 56, borderBottom: `1px solid ${br}`, background: dark ? 'rgba(9,12,20,0.92)' : 'rgba(248,249,255,0.92)', backdropFilter: 'blur(8px)' }}
       >
-        <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+        <Link to={logoTarget} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
           <div style={{ border: `1.5px solid ${accent}`, borderRadius: 7, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, position: 'relative', color: accent, letterSpacing: '-0.05em' }}>
             QA
             <div className="dot-pulse" style={{ position: 'absolute', bottom: 3, right: 3, width: 4, height: 4, borderRadius: '50%', background: accent }} />
           </div>
           <span style={{ color: tx, fontWeight: 600, fontSize: 15, letterSpacing: '-0.02em' }}>QAgen</span>
         </Link>
-        <button
-          onClick={onToggleDark}
-          aria-label="Toggle dark mode"
-          style={{ border: `1px solid ${br}`, borderRadius: 8, padding: 6, color: su, background: 'transparent', cursor: 'pointer', display: 'flex' }}
-        >
-          {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-        </button>
+        <div className="flex items-center gap-3">
+          <Link to="/guide" className="text-xs transition-opacity hover:opacity-70" style={{ color: su }}>
+            Útmutató
+          </Link>
+          <button
+            onClick={onToggleDark}
+            aria-label="Toggle dark mode"
+            style={{ border: `1px solid ${br}`, borderRadius: 8, padding: 6, color: su, background: 'transparent', cursor: 'pointer', display: 'flex' }}
+          >
+            {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+          </button>
+        </div>
       </header>
 
       {/* Login card */}

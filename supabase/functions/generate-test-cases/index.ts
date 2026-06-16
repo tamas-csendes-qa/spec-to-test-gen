@@ -9,7 +9,7 @@ const corsHeaders = {
 interface GenerateBody {
   action?: "generate";
   text: string;
-  format: "gherkin" | "zephyr" | "azurecsv";
+  format: "gherkin" | "zephyr" | "azurecsv" | "testrailcsv" | "xraycsv";
   lang: "hu" | "en";
   tab: "quick" | "keyword" | "userstory";
   secondaryText?: string;
@@ -64,7 +64,7 @@ function getSystemPrompt(tab: string, lang: string, hasSecondary: boolean, hasEx
   let base: string;
 
   if (tab === "quick") {
-    base = `You are an expert software tester. Based on the provided specification, generate brief, one-line test cases that give a quick overview of what needs to be tested. Each test case should have a short title and a single expected result. ${langNote}`;
+    base = `You are an expert software tester. Based on the provided specification, generate brief, one-line test cases that give a high-level overview of what needs to be tested. Each test case should have a short title and a single expected result. ${langNote}`;
   } else if (tab === "keyword") {
     base = `You are an expert software tester specializing in test automation. Based on the provided specification, generate detailed keyword-driven test cases. Return a JSON array where each object represents ONE SINGLE TEST STEP (not a test case). Each step must be atomic and automatable. Use exact UI element names (buttons, fields, menu items). The same test case ID and name repeat for every step belonging to that test case. ${langNote}`;
   } else if (tab === "userstory") {
@@ -136,10 +136,16 @@ Example format:
 Return ONLY valid JSON — no markdown, no code fences, no extra text.`;
   }
 
+  const stepJsonPrompt = `Specification:\n\n${documentText}\n\nGenerate keyword-driven test cases as a JSON array where EACH OBJECT IS ONE SINGLE TEST STEP. Structure:\n[\n  {\n    "id": "TC-001",\n    "name": "Test case title",\n    "preconditions": "Any preconditions for this test case",\n    "stepNumber": 1,\n    "stepAction": "Single atomic action, e.g. Click the Login button",\n    "expectedResult": "Expected result for this specific step",\n    "priority": "High"\n  }\n]\nSame id and name repeat for every step of the same test case. Each stepAction must be a single atomic action. Return ONLY valid JSON — no markdown, no code fences, no extra text.`;
+
+  if (format === "testrailcsv" || format === "xraycsv") {
+    return stepJsonPrompt;
+  }
+
   return `Specification:\n\n${documentText}\n\nGenerate test cases based on this ${specLabel || docLabel}.`;
 }
 
-async function callClaude(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 16000): Promise<{ text: string; token_count: number }> {
+async function callClaude(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 16000): Promise<{ text: string; input_tokens: number; output_tokens: number; token_count: number }> {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -162,8 +168,10 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
 
   const data = await response.json();
   const text = data.content[0].text;
-  const token_count = (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0);
-  return { text, token_count };
+  const input_tokens = data.usage?.input_tokens ?? 0;
+  const output_tokens = data.usage?.output_tokens ?? 0;
+  const token_count = input_tokens + output_tokens;
+  return { text, input_tokens, output_tokens, token_count };
 }
 
 Deno.serve(async (req: Request) => {
@@ -199,10 +207,10 @@ Deno.serve(async (req: Request) => {
 
       const userMessage = `Document:\n\n${text}\n\nAnalyse this document and list the main topics, chapters, or functional areas as a numbered list. Return ONLY a JSON array of objects like this:\n[\n  {"id": "1", "title": "Topic title", "pages": "1-15"},\n  {"id": "2", "title": "Topic title", "pages": "16-32"}\n]\nReturn only the JSON, no other text.`;
 
-      const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 2048);
+      const { text: result, input_tokens, output_tokens, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 2048);
 
       return new Response(
-        JSON.stringify({ result, token_count }),
+        JSON.stringify({ result, input_tokens, output_tokens, token_count }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -222,10 +230,10 @@ Deno.serve(async (req: Request) => {
       const systemPrompt = "You are a document extraction assistant. Your only job is to copy relevant sections verbatim from the provided document. Do not summarise, paraphrase, or add any commentary.";
       const userMessage = `From the document below, extract and return ONLY the sections that belong to the following topics. Copy the text verbatim. Do not include any sections unrelated to the listed topics. Do not add headers, comments, or explanations — output only the extracted document text.\n\nTopics to extract:\n${topicList}\n\nDocument:\n\n${text}`;
 
-      const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 16000);
+      const { text: result, input_tokens, output_tokens, token_count } = await callClaude(apiKey, systemPrompt, userMessage, 16000);
 
       return new Response(
-        JSON.stringify({ result, token_count }),
+        JSON.stringify({ result, input_tokens, output_tokens, token_count }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -240,7 +248,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const baseSystemPrompt = getSystemPrompt(tab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
+    const effectiveTab = (format === "testrailcsv" || format === "xraycsv") ? "keyword" : tab;
+    const baseSystemPrompt = getSystemPrompt(effectiveTab, lang, !!secondaryText || !!confluenceText, !!existingTcText);
     const systemPrompt = extraInstructions ? `${baseSystemPrompt}\n\n${extraInstructions}` : baseSystemPrompt;
     const userMessage = getUserMessage(format, text, tab, secondaryText, existingTcText, confluenceText);
 
@@ -250,10 +259,10 @@ Deno.serve(async (req: Request) => {
       console.log("[generate] systemPrompt:", systemPrompt.slice(0, 500));
     }
 
-    const { text: result, token_count } = await callClaude(apiKey, systemPrompt, userMessage);
+    const { text: result, input_tokens, output_tokens, token_count } = await callClaude(apiKey, systemPrompt, userMessage);
 
     return new Response(
-      JSON.stringify({ result, token_count }),
+      JSON.stringify({ result, input_tokens, output_tokens, token_count }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

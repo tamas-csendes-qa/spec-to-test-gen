@@ -252,6 +252,8 @@ export async function logUsage(params: {
   tabType: string;
   outputFormat: string;
   tokenCount: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }) {
   const { error } = await supabase.from("usage_logs").insert({
     user_id: params.userId,
@@ -259,6 +261,8 @@ export async function logUsage(params: {
     tab_type: params.tabType,
     output_format: params.outputFormat,
     token_count: params.tokenCount,
+    input_tokens: params.inputTokens ?? null,
+    output_tokens: params.outputTokens ?? null,
   });
   if (error) console.error("[Auth] logUsage error:", error);
 }

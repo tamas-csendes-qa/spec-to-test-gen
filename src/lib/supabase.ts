@@ -39,5 +39,7 @@ export type UsageLog = {
   tab_type: string;
   output_format: string;
   token_count: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
   created_at: string;
 };

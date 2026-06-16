@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Moon, Sun, Check, Zap, FileDown, BookOpen, Globe } from "lucide-react";
 
@@ -7,6 +7,7 @@ type Lang = "hu" | "en";
 const STRINGS = {
   hu: {
     loginBtn: "Bejelentkezés",
+    guideLink: "Útmutató",
     contact: "Kapcsolatfelvétel",
     featured: "Ajánlott",
     month: "/hó",
@@ -19,7 +20,7 @@ const STRINGS = {
     ],
     pricingTitle: "Válassz csomagot",
     pricingTagline: "Tesztelők által fejlesztve. Tesztelőknek tervezve.",
-    footer: "QAgen v0.10.0",
+    footer: "QAgen v0.13.0",
     plans: [
       {
         name: "Starter",
@@ -67,6 +68,7 @@ const STRINGS = {
   },
   en: {
     loginBtn: "Login",
+    guideLink: "User Guide",
     contact: "Contact us",
     featured: "Recommended",
     month: "/month",
@@ -79,7 +81,7 @@ const STRINGS = {
     ],
     pricingTitle: "Choose a plan",
     pricingTagline: "Built by testers. Designed for testers.",
-    footer: "QAgen v0.10.0",
+    footer: "QAgen v0.13.0",
     plans: [
       {
         name: "Starter",
@@ -194,6 +196,9 @@ function LandingPage() {
             <span style={{ color: tx, fontWeight: 600, fontSize: 15, letterSpacing: '-0.02em' }}>QAgen</span>
           </div>
           <div className="flex items-center gap-2">
+            <Link to="/guide" className="text-sm hidden sm:block transition-opacity hover:opacity-70" style={{ color: su }}>
+              {t.guideLink}
+            </Link>
             <div style={{ border: `1px solid ${br}`, borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
               {(['hu', 'en'] as Lang[]).map((l) => (
                 <button

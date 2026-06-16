@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   Upload,
   Moon,
@@ -24,7 +25,7 @@ import ExcelJS from "exceljs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-type Format = "gherkin" | "zephyr" | "azurecsv";
+type Format = "gherkin" | "zephyr" | "azurecsv" | "testrailcsv" | "xraycsv";
 type Lang = "hu" | "en";
 type TabType = "quick" | "keyword" | "userstory";
 type KeywordMode = "new" | "expand";
@@ -90,7 +91,7 @@ const STRINGS = {
     step2Title: "Generálási mód",
     step3Title: "Forrás kiválasztása",
     step4Title: "Formátum és generálás",
-    quickTest: "Gyors teszt",
+    quickTest: "Áttekintő teszt",
     quickTestDesc: "1-2 lépéses áttekintő tesztesetek",
     keyword: "Kulcsszavas",
     keywordDesc: "Részletes, automatizálásra kész tesztesetek",
@@ -118,9 +119,10 @@ const STRINGS = {
     playwrightScraping: "Oldalak feltérképezése…",
     download: "Letöltés",
     downloadFile: "Fájl letöltése",
-    footer: "QAgen v0.10.0",
+    footer: "QAgen v0.13.0",
     toggleLang: "Nyelv váltása",
     toggleDark: "Sötét mód váltása",
+    guideLink: "Útmutató",
     error: "Hiba",
     fileProcessingError: "Nem sikerült feldolgozni a fájlt",
     fileTooLarge: "A fájl mérete meghaladja az 50 MB-os korlátot.",
@@ -189,7 +191,7 @@ const STRINGS = {
     step2Title: "Generation mode",
     step3Title: "Select source",
     step4Title: "Format and generate",
-    quickTest: "Quick Test",
+    quickTest: "Overview Test",
     quickTestDesc: "1-2 step overview test cases",
     keyword: "Keyword",
     keywordDesc: "Detailed, automation-ready test cases",
@@ -217,9 +219,10 @@ const STRINGS = {
     playwrightScraping: "Mapping pages…",
     download: "Download",
     downloadFile: "Download file",
-    footer: "QAgen v0.10.0",
+    footer: "QAgen v0.13.0",
     toggleLang: "Switch language",
     toggleDark: "Toggle dark mode",
+    guideLink: "User Guide",
     error: "Error",
     fileProcessingError: "Failed to process file",
     fileTooLarge: "File size exceeds the 50 MB limit.",
@@ -334,7 +337,7 @@ async function callClaudeAPI(
   existingTcText?: string,
   confluenceText?: string,
   extraInstructions?: string
-): Promise<{ result: string; token_count: number }> {
+): Promise<{ result: string; token_count: number; input_tokens: number; output_tokens: number }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -355,7 +358,12 @@ async function callClaudeAPI(
   }
 
   const data = await response.json();
-  return { result: data.result, token_count: data.token_count ?? 0 };
+  return {
+    result: data.result,
+    token_count: data.token_count ?? 0,
+    input_tokens: data.input_tokens ?? 0,
+    output_tokens: data.output_tokens ?? 0,
+  };
 }
 
 async function callAnalyseAPI(text: string, lang: Lang): Promise<DocTopic[]> {
@@ -480,6 +488,28 @@ async function buildKeywordExcelBlob(steps: KeywordStep[]): Promise<Blob> {
   });
 }
 
+function buildTestRailCsv(steps: KeywordStep[]): string {
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const rows = ['Title,Section,Preconditions,Step,Expected Result,Priority,Type'];
+  let curId = '', curName = '', curPre = '', curPri = '';
+  for (const step of steps) {
+    if (step.id !== curId) { curId = step.id; curName = step.name; curPre = step.preconditions; curPri = step.priority; }
+    rows.push([esc(curName), esc(curId), esc(curPre), esc(step.stepAction), esc(step.expectedResult), esc(curPri), '"Functional"'].join(','));
+  }
+  return rows.join('\n');
+}
+
+function buildXrayCsv(steps: KeywordStep[]): string {
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const rows = ['TCID,Summary,Preconditions,Step,Expected Result,Priority'];
+  let curId = '', curName = '', curPre = '', curPri = '';
+  for (const step of steps) {
+    if (step.id !== curId) { curId = step.id; curName = step.name; curPre = step.preconditions; curPri = step.priority; }
+    rows.push([esc(curId), esc(curName), esc(curPre), esc(step.stepAction), esc(step.expectedResult), esc(curPri)].join(','));
+  }
+  return rows.join('\n');
+}
+
 function buildAzureCsv(cases: AzureTestCase[], areaPath: string): string {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const rows = [
@@ -549,6 +579,14 @@ function parseTabResult(raw: string, format: Format): ResultState {
       return { gherkinResult: null, testCases: null, keywordSteps: parsed as KeywordStep[], azureCases: null };
     }
     return { gherkinResult: null, testCases: parsed as TestCase[], keywordSteps: null, azureCases: null };
+  }
+
+  if (format === "testrailcsv" || format === "xraycsv") {
+    const parsed = tryParseJson<KeywordStep[]>(candidate);
+    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+      return { gherkinResult: raw, testCases: null, keywordSteps: null, azureCases: null };
+    }
+    return { gherkinResult: null, testCases: null, keywordSteps: parsed as KeywordStep[], azureCases: null };
   }
 
   if (format === "azurecsv") {
@@ -1078,11 +1116,11 @@ export function QAgen({
         const filteredText = await extractSectionsViaClaude(fullDocText, selected.map((tp) => tp.title));
         const effectiveInput = confluencePages.length > 0 ? "" : filteredText;
         const effectiveConfluence = confluencePages.length > 0 ? filteredText : confluenceText;
-        const { result: raw, token_count } = await callClaudeAPI(effectiveInput, format, lang, tab, secondaryText, existingTcText, effectiveConfluence, extraInstructions);
+        const { result: raw, token_count, input_tokens, output_tokens } = await callClaudeAPI(effectiveInput, format, lang, tab, secondaryText, existingTcText, effectiveConfluence, extraInstructions);
         setResult(parseTabResult(raw, format));
         setPreviewOpen(true);
         if (userId) {
-          void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: token_count });
+          void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: token_count, inputTokens: input_tokens, outputTokens: output_tokens });
           if (sessionToken) void touchSessionByToken(userId, sessionToken);
           void getMonthlyUsageCount(userId).then(setMonthlyCount);
         }
@@ -1094,29 +1132,33 @@ export function QAgen({
           const total = chunks.length;
           const chunkResults: ResultState[] = [];
           let totalTokens = 0;
+          let totalInputTokens = 0;
+          let totalOutputTokens = 0;
 
           for (let i = 0; i < chunks.length; i++) {
             setChunkProgress({ current: i + 1, total });
             const chunkText = confluencePages.length > 0 ? "" : chunks[i];
             const chunkConfluence = confluencePages.length > 0 ? chunks[i] : confluenceText;
-            const { result: raw, token_count } = await callClaudeAPI(chunkText, format, lang, tab, secondaryText, existingTcText, chunkConfluence, extraInstructions);
+            const { result: raw, token_count, input_tokens, output_tokens } = await callClaudeAPI(chunkText, format, lang, tab, secondaryText, existingTcText, chunkConfluence, extraInstructions);
             chunkResults.push(parseTabResult(raw, format));
             totalTokens += token_count;
+            totalInputTokens += input_tokens;
+            totalOutputTokens += output_tokens;
           }
 
           setResult(mergeResults(chunkResults));
           setPreviewOpen(true);
           if (userId) {
-            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: totalTokens });
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: totalTokens, inputTokens: totalInputTokens, outputTokens: totalOutputTokens });
             if (sessionToken) void touchSessionByToken(userId, sessionToken);
             void getMonthlyUsageCount(userId).then(setMonthlyCount);
           }
         } else {
-          const { result: raw, token_count } = await callClaudeAPI(inputText, format, lang, tab, secondaryText, existingTcText, confluenceText, extraInstructions);
+          const { result: raw, token_count, input_tokens, output_tokens } = await callClaudeAPI(inputText, format, lang, tab, secondaryText, existingTcText, confluenceText, extraInstructions);
           setResult(parseTabResult(raw, format));
           setPreviewOpen(true);
           if (userId) {
-            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: token_count });
+            void logUsage({ userId, companyId: companyId ?? null, tabType: tab, outputFormat: format, tokenCount: token_count, inputTokens: input_tokens, outputTokens: output_tokens });
             if (sessionToken) void touchSessionByToken(userId, sessionToken);
             void getMonthlyUsageCount(userId).then(setMonthlyCount);
           }
@@ -1134,8 +1176,14 @@ export function QAgen({
     if (!result) return;
     const date = todayStr();
     if (result.keywordSteps) {
-      const blob = await buildKeywordExcelBlob(result.keywordSteps);
-      triggerDownloadBlob(blob, `qagen-keyword-${date}.xlsx`);
+      if (format === 'testrailcsv') {
+        triggerDownloadText(buildTestRailCsv(result.keywordSteps), `qagen-testrail-${date}.csv`, 'text/csv;charset=utf-8');
+      } else if (format === 'xraycsv') {
+        triggerDownloadText(buildXrayCsv(result.keywordSteps), `qagen-xray-${date}.csv`, 'text/csv;charset=utf-8');
+      } else {
+        const blob = await buildKeywordExcelBlob(result.keywordSteps);
+        triggerDownloadBlob(blob, `qagen-keyword-${date}.xlsx`);
+      }
     } else if (result.testCases) {
       const blob = await buildExcelBlob(result.testCases);
       triggerDownloadBlob(blob, `qagen-zephyr-${date}.xlsx`);
@@ -1409,7 +1457,7 @@ export function QAgen({
   const tx   = dark ? '#c8d8f0' : '#1a1e2e';
   const mu   = dark ? '#8aa6cf' : '#39414f';
   const su   = dark ? '#9ec4ee' : '#222838';
-  const fmtLabel = format === 'gherkin' ? 'Gherkin' : format === 'zephyr' ? 'Zephyr XLSX' : 'Azure DevOps CSV';
+  const fmtLabel = format === 'gherkin' ? 'Gherkin' : format === 'zephyr' ? 'Zephyr XLSX' : format === 'azurecsv' ? 'Azure DevOps CSV' : format === 'testrailcsv' ? 'TestRail CSV' : 'Xray CSV';
 
   return (
     <div className="qa-bg" style={{ minHeight: '100vh', background: bg, color: tx, fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
@@ -1433,6 +1481,9 @@ export function QAgen({
             </button>
           )}
           {userEmail && <span className="text-xs hidden lg:block max-w-[160px] truncate" style={{ color: mu }}>{userEmail}</span>}
+          <Link to="/guide" className="text-xs hidden sm:block transition-opacity hover:opacity-70" style={{ color: su }}>
+            {t.guideLink}
+          </Link>
           <div style={{ border: `1px solid ${br}`, borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
             {(['hu', 'en'] as Lang[]).map((l) => (
               <button key={l} onClick={() => setLang(l)} className="px-2.5 py-1 text-xs font-medium uppercase tracking-wider transition-colors" style={lang === l ? { background: accentColor, color: '#fff' } : { color: mu, background: 'transparent', cursor: 'pointer' }}>
@@ -1706,8 +1757,14 @@ export function QAgen({
                 {/* Format buttons */}
                 <div>
                   <label className="text-xs font-medium uppercase tracking-widest block mb-2" style={{ color: mu }}>{t.formatLabel}</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {([{ val: 'gherkin' as Format, label: 'Gherkin' }, { val: 'zephyr' as Format, label: 'Zephyr XLSX' }, { val: 'azurecsv' as Format, label: 'Azure DevOps CSV' }]).map(({ val, label }) => {
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {([
+                      { val: 'gherkin' as Format, label: 'Gherkin' },
+                      { val: 'zephyr' as Format, label: 'Zephyr XLSX' },
+                      { val: 'azurecsv' as Format, label: 'Azure DevOps CSV' },
+                      { val: 'testrailcsv' as Format, label: 'TestRail CSV' },
+                      { val: 'xraycsv' as Format, label: 'Xray CSV' },
+                    ]).map(({ val, label }) => {
                       const sel = format === val;
                       return (
                         <button key={val} onClick={() => { setFormat(val); setResult(null); }} className="rounded-lg px-3 py-2 text-xs text-left transition-opacity hover:opacity-80" style={{ border: `1px solid ${sel ? accentColor : br}`, background: sel ? (dark ? '#0d1a38' : '#eff3ff') : (dark ? '#111b2e' : '#fafafa'), color: sel ? accentColor : mu, cursor: 'pointer' }}>{label}</button>

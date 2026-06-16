@@ -516,7 +516,7 @@ function UsageTab() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const tabLabel: Record<string, string> = { quick: "Gyors teszt", keyword: "Kulcsszavas", userstory: "Felhasználói igény" };
+  const tabLabel: Record<string, string> = { quick: "Áttekintő teszt", keyword: "Kulcsszavas", userstory: "Felhasználói igény" };
   const formatLabel: Record<string, string> = { gherkin: "Gherkin", zephyr: "Zephyr XLSX", azurecsv: "Azure CSV" };
 
   return (
@@ -571,31 +571,73 @@ function UsageTab() {
                 <th className="px-4 py-3 text-left">Cég</th>
                 <th className="px-4 py-3 text-left">Típus</th>
                 <th className="px-4 py-3 text-left">Formátum</th>
-                <th className="px-4 py-3 text-right">Tokenek</th>
+                <th className="px-4 py-3 text-right">Input tok.</th>
+                <th className="px-4 py-3 text-right">Output tok.</th>
+                <th className="px-4 py-3 text-right">Költség (USD)</th>
+                <th className="px-4 py-3 text-right">Költség (HUF)</th>
                 <th className="px-4 py-3 text-right">Dátum</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3 text-muted-foreground">{r.user_email ?? r.user_id.slice(0, 8)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.company_name ?? "—"}</td>
-                  <td className="px-4 py-3">{tabLabel[r.tab_type] ?? r.tab_type}</td>
-                  <td className="px-4 py-3">{formatLabel[r.output_format] ?? r.output_format}</td>
-                  <td className="px-4 py-3 text-right font-mono">{r.token_count.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-muted-foreground whitespace-nowrap">
-                    {new Date(r.created_at).toLocaleString("hu", { dateStyle: "short", timeStyle: "short" })}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const costUsd = r.input_tokens != null && r.output_tokens != null
+                  ? (r.input_tokens * 3 / 1_000_000) + (r.output_tokens * 15 / 1_000_000)
+                  : r.token_count * 0.0000054;
+                const costHuf = Math.round(costUsd * 310);
+                return (
+                  <tr key={r.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3 text-muted-foreground">{r.user_email ?? r.user_id.slice(0, 8)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{r.company_name ?? "—"}</td>
+                    <td className="px-4 py-3">{tabLabel[r.tab_type] ?? r.tab_type}</td>
+                    <td className="px-4 py-3">{formatLabel[r.output_format] ?? r.output_format}</td>
+                    <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                      {r.input_tokens != null ? r.input_tokens.toLocaleString() : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                      {r.output_tokens != null ? r.output_tokens.toLocaleString() : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">${costUsd.toFixed(4)}</td>
+                    <td className="px-4 py-3 text-right font-mono">{costHuf.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground whitespace-nowrap">
+                      {new Date(r.created_at).toLocaleString("hu", { dateStyle: "short", timeStyle: "short" })}
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length > 0 && (() => {
+                const totalInput = rows.reduce((s, r) => s + (r.input_tokens ?? 0), 0);
+                const totalOutput = rows.reduce((s, r) => s + (r.output_tokens ?? 0), 0);
+                const totalUsd = rows.reduce((s, r) => {
+                  const c = r.input_tokens != null && r.output_tokens != null
+                    ? (r.input_tokens * 3 / 1_000_000) + (r.output_tokens * 15 / 1_000_000)
+                    : r.token_count * 0.0000054;
+                  return s + c;
+                }, 0);
+                const totalHuf = Math.round(totalUsd * 310);
+                return (
+                  <tr className="bg-muted/30 border-t-2 border-border">
+                    <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Összesen *</td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold">{totalInput.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold">{totalOutput.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold">${totalUsd.toFixed(4)}</td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold">{totalHuf.toLocaleString()}</td>
+                    <td />
+                  </tr>
+                );
+              })()}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">Nincs adat a szűrési feltételekre.</td>
+                  <td colSpan={9} className="px-4 py-6 text-center text-muted-foreground">Nincs adat a szűrési feltételekre.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+      )}
+      {rows.length > 0 && (
+        <p className="text-xs text-muted-foreground mt-2">
+          * Claude Sonnet árazás: $3/1M input token, $15/1M output token. Régi adatoknál becsült érték (blended $5.4/1M). Árfolyam: 1 USD = 310 HUF.
+        </p>
       )}
     </div>
   );
