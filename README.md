@@ -7,17 +7,19 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 ## Features
 
 - 📄 File upload: PDF, DOCX, XLSX
-- 🧪 Three test case types: Quick Test, Keyword-driven, User Story
+- 🧪 Three test case types: Overview Test, Keyword-driven, User Story
 - 🔄 Guided workflow: step-by-step test case creation with progressive disclosure
-- 📤 Export formats: Gherkin, Zephyr XLSX, Azure DevOps CSV
+- 📤 Export formats: Gherkin, Zephyr XLSX, Azure DevOps CSV, TestRail CSV, Xray CSV
 - 🔗 Confluence integration: connect and import pages directly
+- 🌐 Playwright UI mapping: scrape real UI element names from public apps (Railway)
 - 📎 Multi-document support: specification + additional context + existing test cases
 - 📋 Document structure analysis: analyse and select specific topics before generation
-- 🔐 Authentication: login, admin panel, per-user session limits, usage limits, and feature flags (Confluence, Playwright)
-- 🎭 Playwright URL input: add application pages for future automated test mapping (per-user, admin-controlled)
+- ⚙️ Generation settings: control test case types, focus areas, priority and count
+- 🔐 Authentication: login, admin panel, per-user session and usage limits, feature flags
 - 🔁 Real-time settings: UI updates instantly when admin changes per-user feature flags
+- 📖 User Guide: built-in bilingual documentation
 - 🌐 Bilingual: Hungarian and English UI
-- 🌙 Dark mode support
+- 🌙 Dark mode support (persistent)
 - ⚡ Powered by Claude AI (Anthropic)
 
 ## Tech Stack
@@ -28,6 +30,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 - **File processing:** pdfjs-dist (PDF), docx-parser (DOCX), ExcelJS / xlsx (XLSX)
 - **AI:** Anthropic Claude API via Supabase Edge Function
 - **Auth & Database:** Supabase
+- **Playwright Server:** Node.js/Express on Railway
 - **Build:** Vite 7
 
 ## Status
@@ -42,9 +45,12 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 | v0.6.0 | ✅ Done | Login, authentication, admin panel, concurrent session limit, usage logging, multi-document upload, existing test case expansion |
 | v0.7.0 | ✅ Done | Confluence API integration, page selection modal, multi-page support |
 | v0.8.0 | ✅ Done | Document structure analysis, topic selection, chunking support, landing page with pricing |
-| v0.9.0 | ✅ Done | UX refactor, progressive disclosure workflow, Playwright placeholder, per-user feature visibility |
-| v0.10.0 | ✅ Done | Playwright UI mapping (public apps) element extraction |
-| v1.0.0 | ⏳ Planned | Domain, production deployment |
+| v0.9.0 | ✅ Done | Migrated to Claude Code, new Supabase project, stability fixes |
+| v0.10.0 | ✅ Done | Playwright UI mapping (public apps), Railway server deployment |
+| v0.11.0 | ✅ Done | UX refactor – progressive disclosure workflow, generation settings panel, per-user feature visibility |
+| v0.12.0 | ✅ Done | New design system, typography standardisation, dark mode persistence, login and landing page redesign |
+| v0.13.0 | ✅ Done | TestRail CSV export, Xray CSV export, cost tracking in admin panel, User Guide page |
+| v1.0.0 | ⏳ Planned | Domain, production deployment, Stripe payments |
 
 ---
 
@@ -57,17 +63,19 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 ## Funkciók
 
 - 📄 Fájlfeltöltés: PDF, DOCX, XLSX
-- 🧪 Háromféle teszteset típus: Gyors teszt, Kulcsszavas, Felhasználói igény
+- 🧪 Háromféle teszteset típus: Áttekintő teszt, Kulcsszavas, Felhasználói igény
 - 🔄 Irányított workflow: lépésről lépésre vezető teszteset készítés
-- 📤 Exportálási formátumok: Gherkin, Zephyr XLSX, Azure DevOps CSV
+- 📤 Exportálási formátumok: Gherkin, Zephyr XLSX, Azure DevOps CSV, TestRail CSV, Xray CSV
 - 🔗 Confluence integráció: oldalak közvetlen importálása
+- 🌐 Playwright UI feltérképezés: valódi UI elemnevek kinyerése publikus appokból (Railway)
 - 📎 Több dokumentum támogatás: specifikáció + kiegészítő dokumentum + meglévő tesztesetek
 - 📋 Dokumentum struktúra elemzés: témák kiválasztása generálás előtt
-- 🔐 Authentikáció: bejelentkezés, admin panel, felhasználónkénti session limitek, használati limitek és funkció kapcsolók (Confluence, Playwright)
-- 🎭 Playwright URL bevitel: alkalmazásoldalak megadása jövőbeli automatizált tesztleképezéshez (felhasználónként, admin által vezérelt)
-- 🔁 Valós idejű beállítások: az admin által módosított funkció kapcsolók azonnal frissülnek a felhasználói felületen
+- ⚙️ Generálási beállítások: teszteset típus, fókuszterület, prioritás és darabszám vezérlése
+- 🔐 Authentikáció: bejelentkezés, admin panel, felhasználónkénti session és használati limitek, funkció kapcsolók
+- 🔁 Valós idejű beállítások: az admin által módosított funkció kapcsolók azonnal frissülnek
+- 📖 Felhasználói útmutató: beépített kétnyelvű dokumentáció
 - 🌐 Kétnyelvű: magyar és angol felület
-- 🌙 Sötét mód támogatás
+- 🌙 Sötét mód támogatás (perzisztens)
 - ⚡ Claude AI (Anthropic) alapú generálás
 
 ## Technológiai stack
@@ -78,6 +86,7 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 - **Fájlfeldolgozás:** pdfjs-dist (PDF), docx-parser (DOCX), ExcelJS / xlsx (XLSX)
 - **AI:** Anthropic Claude API, Supabase Edge Function-ön keresztül
 - **Auth & Adatbázis:** Supabase
+- **Playwright szerver:** Node.js/Express, Railway-en deployolva
 - **Build:** Vite 7
 
 ## Állapot
@@ -92,6 +101,9 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.6.0 | ✅ Kész | Login, authentikáció, admin panel, concurrent session limit, usage logging, több dokumentum feltöltés, meglévő tesztesetek bővítése |
 | v0.7.0 | ✅ Kész | Confluence API integráció, oldalkiválasztó modal, több oldal támogatás |
 | v0.8.0 | ✅ Kész | Dokumentum struktúra elemzés, téma kiválasztás, chunking támogatás, landing page csomagokkal |
-| v0.9.0 | ✅ Kész | UX refaktor, progressive disclosure workflow, Playwright placeholder, felhasználónkénti funkció láthatóság |
-| v0.10.0 | ✅ Kész | Playwright UI feltérképezés (publikus appok) |
-| v1.0.0 | ⏳ Tervezett | Domain, éles deployment |
+| v0.9.0 | ✅ Kész | Átköltözés Claude Code-ba, új Supabase projekt, stabilitási javítások |
+| v0.10.0 | ✅ Kész | Playwright UI feltérképezés (publikus appok), Railway szerver deployment |
+| v0.11.0 | ✅ Kész | UX refaktor – progressive disclosure workflow, generálási beállítások panel, felhasználónkénti funkció láthatóság |
+| v0.12.0 | ✅ Kész | Új design rendszer, tipográfia egységesítés, dark mode perzisztencia, login és landing page újratervezés |
+| v0.13.0 | ✅ Kész | TestRail CSV export, Xray CSV export, költségkövetés admin panelen, felhasználói útmutató oldal |
+| v1.0.0 | ⏳ Tervezett | Domain, éles deployment, Stripe fizetés |
