@@ -1,20 +1,26 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+// TODO: add the production frontend origin here once QAgen has a public domain (see CLAUDE.md v1.0.0 roadmap).
+const ALLOWED_ORIGINS = ["http://localhost:5173"];
 
-function jsonError(msg: string, status = 400) {
+function getCorsHeaders(origin: string | null) {
+  const allowOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  };
+}
+
+function jsonError(corsHeaders: Record<string, string>, msg: string, status = 400) {
   return new Response(JSON.stringify({ error: msg }), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
-function jsonOk(data: unknown) {
+function jsonOk(corsHeaders: Record<string, string>, data: unknown) {
   return new Response(JSON.stringify(data), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
@@ -47,7 +53,51 @@ function extractPageIdFromUrl(url: string): string | null {
   return null;
 }
 
+// ── Token encryption (AES-GCM, key derived from CONFLUENCE_ENCRYPTION_KEY) ──
+
+let cachedAesKey: CryptoKey | null = null;
+
+async function getAesKey(): Promise<CryptoKey> {
+  if (cachedAesKey) return cachedAesKey;
+  const secret = Deno.env.get("CONFLUENCE_ENCRYPTION_KEY");
+  if (!secret) throw new Error("CONFLUENCE_ENCRYPTION_KEY not configured");
+  // SHA-256 the secret so the AES-256 key is always exactly 32 bytes,
+  // regardless of the exact length/charset of the configured secret.
+  const keyMaterial = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  cachedAesKey = await crypto.subtle.importKey("raw", keyMaterial, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  return cachedAesKey;
+}
+
+async function encryptToken(plainText: string): Promise<string> {
+  const key = await getAesKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plainText));
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(ciphertext), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+
+// Rows saved before encryption was added still hold a plaintext token.
+// If AES-GCM decryption fails (wrong format / auth tag mismatch), fall
+// back to treating the stored value as legacy plaintext.
+async function decryptToken(stored: string): Promise<string> {
+  try {
+    const key = await getAesKey();
+    const combined = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
+    if (combined.length < 13) throw new Error("ciphertext too short");
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    return new TextDecoder().decode(plainBuf);
+  } catch {
+    return stored;
+  }
+}
+
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req.headers.get("Origin"));
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -62,7 +112,7 @@ Deno.serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user } } = await callerClient.auth.getUser();
-    if (!user) return jsonError("Unauthorized", 401);
+    if (!user) return jsonError(corsHeaders, "Unauthorized", 401);
 
     // Verify confluence is enabled for this user
     const { data: userProfile } = await callerClient
@@ -71,7 +121,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", user.id)
       .maybeSingle();
     if (!userProfile?.confluence_enabled) {
-      return jsonError("Confluence access is not enabled for this account", 403);
+      return jsonError(corsHeaders, "Confluence access is not enabled for this account", 403);
     }
 
     const body = await req.json() as {
@@ -88,7 +138,7 @@ Deno.serve(async (req: Request) => {
     // ── save_connection ────────────────────────────────────────────────────────
     if (action === "save_connection") {
       const { confluence_url, email, api_token } = body;
-      if (!confluence_url || !email || !api_token) return jsonError("Missing fields");
+      if (!confluence_url || !email || !api_token) return jsonError(corsHeaders, "Missing fields");
 
       // Normalise URL: strip protocol and trailing slash
       const cleanUrl = (confluence_url as string).replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -106,19 +156,20 @@ Deno.serve(async (req: Request) => {
       const testBody = await testRes.text();
       console.log("[confluence-proxy] Test response status:", testRes.status, "body:", testBody.slice(0, 300));
       if (!testRes.ok) {
-        return jsonError(`Confluence credentials invalid (${testRes.status}): ${testBody.slice(0, 200)}`, 400);
+        return jsonError(corsHeaders, `Confluence credentials invalid (${testRes.status}): ${testBody.slice(0, 200)}`, 400);
       }
 
       // Upsert (delete old, insert new)
       await callerClient.from("confluence_connections").delete().eq("user_id", user.id);
+      const encryptedToken = await encryptToken(api_token);
       const { error } = await callerClient.from("confluence_connections").insert({
         user_id: user.id,
         confluence_url: confluence_url.replace(/^https?:\/\//, "").replace(/\/$/, ""),
         email,
-        api_token,
+        api_token: encryptedToken,
       });
-      if (error) return jsonError(error.message, 500);
-      return jsonOk({ ok: true });
+      if (error) return jsonError(corsHeaders, error.message, 500);
+      return jsonOk(corsHeaders, { ok: true });
     }
 
     // ── get_connection ─────────────────────────────────────────────────────────
@@ -128,32 +179,33 @@ Deno.serve(async (req: Request) => {
         .select("confluence_url, email, created_at")
         .eq("user_id", user.id)
         .maybeSingle();
-      return jsonOk({ connection: data });
+      return jsonOk(corsHeaders, { connection: data });
     }
 
     // ── list_children ──────────────────────────────────────────────────────────
     if (action === "list_children") {
       const { page_url } = body;
-      if (!page_url) return jsonError("Missing page_url");
+      if (!page_url) return jsonError(corsHeaders, "Missing page_url");
 
       const { data: conn } = await callerClient
         .from("confluence_connections")
         .select("confluence_url, email, api_token")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!conn) return jsonError("No Confluence connection configured", 400);
+      if (!conn) return jsonError(corsHeaders, "No Confluence connection configured", 400);
 
       const pageId = extractPageIdFromUrl(page_url);
-      if (!pageId) return jsonError("Could not extract page ID from URL");
+      if (!pageId) return jsonError(corsHeaders, "Could not extract page ID from URL");
 
-      const authB64 = btoa(`${conn.email}:${conn.api_token}`);
+      const decryptedToken = await decryptToken(conn.api_token);
+      const authB64 = btoa(`${conn.email}:${decryptedToken}`);
       const baseUrl = `https://${conn.confluence_url}`;
 
       // Fetch the parent page info
       const parentRes = await fetch(`${baseUrl}/wiki/api/v2/pages/${pageId}`, {
         headers: { Authorization: `Basic ${authB64}`, Accept: "application/json" },
       });
-      if (!parentRes.ok) return jsonError(`Failed to fetch page: ${parentRes.status}`, 400);
+      if (!parentRes.ok) return jsonError(corsHeaders, `Failed to fetch page: ${parentRes.status}`, 400);
       const parentData = await parentRes.json() as { id: string; title: string };
 
       // Fetch children
@@ -161,7 +213,7 @@ Deno.serve(async (req: Request) => {
         `${baseUrl}/wiki/api/v2/pages/${pageId}/children?limit=50`,
         { headers: { Authorization: `Basic ${authB64}`, Accept: "application/json" } }
       );
-      if (!childrenRes.ok) return jsonError(`Failed to fetch children: ${childrenRes.status}`, 400);
+      if (!childrenRes.ok) return jsonError(corsHeaders, `Failed to fetch children: ${childrenRes.status}`, 400);
       const childrenData = await childrenRes.json() as { results: Array<{ id: string; title: string }> };
 
       const pages = [
@@ -173,35 +225,36 @@ Deno.serve(async (req: Request) => {
         })),
       ];
 
-      return jsonOk({ pages });
+      return jsonOk(corsHeaders, { pages });
     }
 
     // ── get_page_content ───────────────────────────────────────────────────────
     if (action === "get_page_content") {
       const { page_url } = body;
-      if (!page_url) return jsonError("Missing page_url");
+      if (!page_url) return jsonError(corsHeaders, "Missing page_url");
 
       const { data: conn } = await callerClient
         .from("confluence_connections")
         .select("confluence_url, email, api_token")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!conn) return jsonError("No Confluence connection configured", 400);
+      if (!conn) return jsonError(corsHeaders, "No Confluence connection configured", 400);
 
       const pageId = extractPageIdFromUrl(page_url);
-      if (!pageId) return jsonError("Could not extract page ID from URL");
+      if (!pageId) return jsonError(corsHeaders, "Could not extract page ID from URL");
 
-      const authB64 = btoa(`${conn.email}:${conn.api_token}`);
+      const decryptedToken = await decryptToken(conn.api_token);
+      const authB64 = btoa(`${conn.email}:${decryptedToken}`);
       const baseUrl = `https://${conn.confluence_url}`;
 
       const res = await fetch(
         `${baseUrl}/wiki/api/v2/pages/${pageId}?body-format=storage`,
         { headers: { Authorization: `Basic ${authB64}`, Accept: "application/json" } }
       );
-      if (!res.ok) return jsonError(`Failed to fetch page content: ${res.status}`, 400);
+      if (!res.ok) return jsonError(corsHeaders, `Failed to fetch page content: ${res.status}`, 400);
       const data = await res.json() as { id: string; title: string; body: { storage: { value: string } } };
 
-      return jsonOk({
+      return jsonOk(corsHeaders, {
         id: data.id,
         title: data.title,
         content: storageToPlainText(data.body.storage.value),
@@ -211,16 +264,17 @@ Deno.serve(async (req: Request) => {
     // ── get_pages_content ──────────────────────────────────────────────────────
     if (action === "get_pages_content") {
       const { page_ids } = body;
-      if (!page_ids?.length) return jsonError("Missing page_ids");
+      if (!page_ids?.length) return jsonError(corsHeaders, "Missing page_ids");
 
       const { data: conn } = await callerClient
         .from("confluence_connections")
         .select("confluence_url, email, api_token")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!conn) return jsonError("No Confluence connection configured", 400);
+      if (!conn) return jsonError(corsHeaders, "No Confluence connection configured", 400);
 
-      const authB64 = btoa(`${conn.email}:${conn.api_token}`);
+      const decryptedToken = await decryptToken(conn.api_token);
+      const authB64 = btoa(`${conn.email}:${decryptedToken}`);
       const baseUrl = `https://${conn.confluence_url}`;
 
       const results = await Promise.all(
@@ -239,10 +293,10 @@ Deno.serve(async (req: Request) => {
         })
       );
 
-      return jsonOk({ pages: results });
+      return jsonOk(corsHeaders, { pages: results });
     }
 
-    return jsonError("Unknown action");
+    return jsonError(corsHeaders, "Unknown action");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return new Response(JSON.stringify({ error: message }), {

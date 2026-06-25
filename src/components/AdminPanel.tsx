@@ -245,12 +245,13 @@ function UsersTab() {
     // Create Supabase auth user via admin API (edge function)
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    const token = (await supabase.auth.getSession()).data.session?.access_token ?? anonKey;
 
     const res = await fetch(`${supabaseUrl}/functions/v1/admin-create-user`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${anonKey}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         email: newUser.email,

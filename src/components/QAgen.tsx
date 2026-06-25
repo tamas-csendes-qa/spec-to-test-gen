@@ -343,11 +343,14 @@ async function callClaudeAPI(
 
   if (!supabaseUrl || !anonKey) throw new Error("Supabase configuration missing");
 
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? anonKey;
+
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-test-cases`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${anonKey}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ text, format, lang, tab, secondaryText, existingTcText, confluenceText, extraInstructions }),
   });
@@ -372,9 +375,12 @@ async function callAnalyseAPI(text: string, lang: Lang): Promise<DocTopic[]> {
 
   if (!supabaseUrl || !anonKey) throw new Error("Supabase configuration missing");
 
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? anonKey;
+
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-test-cases`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ action: "analyse", text, lang }),
   });
 
@@ -935,9 +941,11 @@ export function QAgen({
   const extractSectionsViaClaude = async (fullText: string, topicTitles: string[]): Promise<string> => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? anonKey;
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-test-cases`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action: "extract", text: fullText, topics: topicTitles }),
     });
     if (!response.ok) return fullText;

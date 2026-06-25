@@ -1,10 +1,19 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+// TODO: add the production frontend origin here once QAgen has a public domain (see CLAUDE.md v1.0.0 roadmap).
+const ALLOWED_ORIGINS = ["http://localhost:5173"];
+
+function getCorsHeaders(origin: string | null) {
+  const allowOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  };
+}
+
+const MAX_TEXT_LENGTH = 500_000;
 
 interface GenerateBody {
   action?: "generate";
@@ -175,12 +184,30 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req.headers.get("Origin"));
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user } } = await callerClient.auth.getUser();
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const body: RequestBody = await req.json();
+    const requestLang = "lang" in body ? body.lang : "en";
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
 
     if (!apiKey) {
@@ -190,6 +217,33 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const { data: profile } = await callerClient
+      .from("users")
+      .select("max_concurrent_sessions, monthly_generation_limit")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    // Server-side concurrent session limit check
+    const sessionLimit = profile?.max_concurrent_sessions ?? 0;
+    if (sessionLimit > 0) {
+      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { count: activeSessionCount } = await callerClient
+        .from("sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("last_active", thirtyMinAgo);
+
+      if ((activeSessionCount ?? 0) >= sessionLimit) {
+        const message = requestLang === "hu"
+          ? "Túl sok egyidejű bejelentkezés. Zárj be egy másik munkamenetet, majd próbáld újra."
+          : "Too many concurrent sessions. Please close another session and try again.";
+        return new Response(
+          JSON.stringify({ error: message }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // --- ANALYSE action ---
     if (body.action === "analyse") {
       const { text, lang } = body as AnalyseBody;
@@ -197,6 +251,12 @@ Deno.serve(async (req: Request) => {
       if (!text) {
         return new Response(
           JSON.stringify({ error: "Missing text parameter" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (text.length > MAX_TEXT_LENGTH) {
+        return new Response(
+          JSON.stringify({ error: `Text exceeds the maximum allowed length of ${MAX_TEXT_LENGTH.toLocaleString()} characters` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -225,6 +285,12 @@ Deno.serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      if (text.length > MAX_TEXT_LENGTH) {
+        return new Response(
+          JSON.stringify({ error: `Text exceeds the maximum allowed length of ${MAX_TEXT_LENGTH.toLocaleString()} characters` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       const topicList = topics.map((t, i) => `${i + 1}. ${t}`).join("\n");
       const systemPrompt = "You are a document extraction assistant. Your only job is to copy relevant sections verbatim from the provided document. Do not summarise, paraphrase, or add any commentary.";
@@ -246,6 +312,36 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({ error: "Missing text parameter" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    const combinedTextLength = (text?.length ?? 0) + (secondaryText?.length ?? 0) + (existingTcText?.length ?? 0) + (confluenceText?.length ?? 0);
+    if (combinedTextLength > MAX_TEXT_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `Combined input text exceeds the maximum allowed length of ${MAX_TEXT_LENGTH.toLocaleString()} characters` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Server-side monthly generation limit check
+    const monthlyLimit = profile?.monthly_generation_limit ?? 0;
+    if (monthlyLimit > 0) {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const { count } = await callerClient
+        .from("usage_logs")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("created_at", monthStart);
+
+      if ((count ?? 0) >= monthlyLimit) {
+        const message = lang === "hu"
+          ? "Elérted a havi generálási limitedet."
+          : "You have reached your monthly generation limit.";
+        return new Response(
+          JSON.stringify({ error: message }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     const effectiveTab = (format === "testrailcsv" || format === "xraycsv") ? "keyword" : tab;
