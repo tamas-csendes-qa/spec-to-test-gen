@@ -3,7 +3,6 @@ import { Building2, Users, ChartBar as BarChart3, Shield, Plus, Trash2, LogOut, 
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import type { Company, UserProfile, Session, UsageLog } from "@/lib/supabase";
-import { useAuth } from "@/lib/auth";
 
 type AdminTab = "companies" | "users" | "usage" | "sessions";
 
@@ -23,7 +22,43 @@ interface SessionRow extends Session {
   is_active: boolean;
 }
 
-// ── Inline editable cell ────────────────────────────────────────────────────
+// ── Inline editable cells ───────────────────────────────────────────────────
+
+function EditableName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  const commit = () => {
+    if (draft.trim() && draft.trim() !== value) onSave(draft.trim());
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        autoFocus
+        className="w-40 rounded border border-input bg-background px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+    );
+  }
+  return (
+    <button
+      onClick={() => { setEditing(true); setDraft(value); }}
+      title="Kattints a szerkesztéshez"
+      className="rounded px-2 py-0.5 text-sm font-medium hover:bg-accent transition-colors text-left"
+    >
+      {value}
+    </button>
+  );
+}
 
 function EditableNumber({
   value,
@@ -113,6 +148,11 @@ function CompaniesTab() {
     void load();
   };
 
+  const updateCompany = async (id: string, name: string) => {
+    await supabase.from("companies").update({ name }).eq("id", id);
+    void load();
+  };
+
   const deleteCompany = async (id: string) => {
     if (!confirm("Biztosan törli a céget?")) return;
     await supabase.from("companies").delete().eq("id", id);
@@ -143,7 +183,9 @@ function CompaniesTab() {
             <tbody className="divide-y divide-border">
               {companies.map((c) => (
                 <tr key={c.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
+                  <td className="px-4 py-3">
+                    <EditableName value={c.name} onSave={(name) => { void updateCompany(c.id, name); }} />
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString("hu")}</td>
                   <td className="px-4 py-3 text-right">
                     <button
@@ -292,58 +334,56 @@ function UsersTab() {
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 text-left">E-mail</th>
-                <th className="px-4 py-3 text-left">Cég</th>
-                <th className="px-4 py-3 text-center">Max munkamenetek</th>
-                <th className="px-4 py-3 text-center">Havi limit</th>
-                <th className="px-4 py-3 text-center">CF státusz</th>
-                <th className="px-4 py-3 text-center">Playwright</th>
-                <th className="px-4 py-3 text-center">Confluence</th>
-                <th className="px-4 py-3 text-center">Admin</th>
-                <th className="px-4 py-3 text-right">Műveletek</th>
+                <th className="px-3 py-2 text-left">E-mail</th>
+                <th className="px-3 py-2 text-left">Cég</th>
+                <th className="px-2 py-2 text-center" title="Max egyidejű munkamenetek">Munkam.</th>
+                <th className="px-2 py-2 text-center" title="Havi generálási limit">Limit</th>
+                <th className="px-2 py-2 text-center" title="Confluence kapcsolat beállítva">CF áll.</th>
+                <th className="px-2 py-2 text-center" title="Playwright engedélyezve">PW</th>
+                <th className="px-2 py-2 text-center" title="Confluence engedélyezve">CF</th>
+                <th className="px-2 py-2 text-center">Admin</th>
+                <th className="px-2 py-2 text-right"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3 font-medium">{u.email}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-3 py-2 font-medium max-w-[200px]">
+                    <span className="block truncate" title={u.email}>{u.email}</span>
+                  </td>
+                  <td className="px-3 py-2">
                     <select
                       value={u.company_id ?? ""}
                       onChange={(e) => { void updateUser(u.id, { company_id: e.target.value || null }); }}
-                      className="rounded border border-input bg-background px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      className="w-28 rounded border border-input bg-background px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     >
-                      <option value="">— nincs —</option>
+                      <option value="">—</option>
                       {companies.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 py-2 text-center">
                     <EditableNumber
                       value={u.max_concurrent_sessions}
                       onSave={(v) => { void updateUser(u.id, { max_concurrent_sessions: v }); }}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 py-2 text-center">
                     <EditableNumber
                       value={u.monthly_generation_limit ?? 100}
                       min={0}
                       onSave={(v) => { void updateUser(u.id, { monthly_generation_limit: v }); }}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 py-2 text-center">
                     {u.has_confluence ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
-                        <span>✓</span> Beállítva
-                      </span>
+                      <span className="text-xs font-medium text-green-700 dark:text-green-400">✓</span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                        <span>✗</span> Hiányzik
-                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">✗</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input
                       type="checkbox"
                       checked={u.playwright_enabled ?? false}
@@ -351,7 +391,7 @@ function UsersTab() {
                       className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input
                       type="checkbox"
                       checked={u.confluence_enabled ?? false}
@@ -359,7 +399,7 @@ function UsersTab() {
                       className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input
                       type="checkbox"
                       checked={u.is_admin}
@@ -367,7 +407,7 @@ function UsersTab() {
                       className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
                     />
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-2 py-2 text-right">
                     <button
                       onClick={() => { void deleteUser(u.id, u.email); }}
                       className="text-muted-foreground hover:text-destructive transition-colors"
@@ -660,7 +700,7 @@ function SessionsTab() {
     ]);
 
     const userMap: Record<string, { email: string; company_name?: string }> = {};
-    for (const u of (usersData ?? []) as Array<{ id: string; email: string; company_id: string | null; companies: { name: string } | null }>) {
+    for (const u of (usersData ?? []) as unknown as Array<{ id: string; email: string; company_id: string | null; companies: { name: string } | null }>) {
       userMap[u.id] = { email: u.email, company_name: u.companies?.name };
     }
 
