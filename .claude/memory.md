@@ -22,8 +22,9 @@
 | v0.11.0 | ✅ Kész | UX refaktor – progressive disclosure workflow, generálási beállítások panel, per-user feature láthatóság |
 | v0.12.0 | ✅ Kész | Új design system, tipográfia szabványosítás, dark mode perzisztencia, login és landing page újratervezés |
 | v0.13.0 | ✅ Kész | TestRail CSV export, Xray CSV export, cost tracking admin panelben, User Guide oldal |
+| v0.14.0 | ✅ Kész | Biztonsági megerősítés, cég-szintű RLS, cégenként konfigurálható export formátumok, admin panel fejlesztések |
 
-**Jelenlegi állapot: v0.13.0 – a tervezett MVP funkciók mind elkészültek.**
+**Jelenlegi állapot: v0.14.0 – a tervezett MVP funkciók mind elkészültek.**
 
 ---
 

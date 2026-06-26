@@ -7,7 +7,7 @@ dokumentumot, és strukturált teszteseteket kap vissza – magyarul vagy angolu
 
 **Célcsoport:** QA mérnökök közép- és nagyvállalatoknál (banki, fintech, enterprise szektor)
 
-**Jelenlegi verzió: v0.13.0 – MVP funkciók mind készen, v1.0.0 (production) előtt állunk**
+**Jelenlegi verzió: v0.14.0 – MVP funkciók mind készen, v1.0.0 (production) előtt állunk**
 
 ---
 

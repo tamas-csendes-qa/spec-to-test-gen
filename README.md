@@ -16,6 +16,8 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 - 📋 Document structure analysis: analyse and select specific topics before generation
 - ⚙️ Generation settings: control test case types, focus areas, priority and count
 - 🔐 Authentication: login, admin panel, per-user session and usage limits, feature flags
+- 🛡️ Security: JWT auth on all edge functions, server-side rate limiting, SSRF protection, encrypted Confluence tokens, CORS allowlist
+- 🏢 Multi-tenant: company-scoped RLS, per-company export format restrictions
 - 🔁 Real-time settings: UI updates instantly when admin changes per-user feature flags
 - 📖 User Guide: built-in bilingual documentation
 - 🌐 Bilingual: Hungarian and English UI
@@ -50,6 +52,7 @@ QAgen is an AI-powered test case generator for software testers. Upload a specif
 | v0.11.0 | ✅ Done | UX refactor – progressive disclosure workflow, generation settings panel, per-user feature visibility |
 | v0.12.0 | ✅ Done | New design system, typography standardisation, dark mode persistence, login and landing page redesign |
 | v0.13.0 | ✅ Done | TestRail CSV export, Xray CSV export, cost tracking in admin panel, User Guide page |
+| v0.14.0 | ✅ Done | Security hardening (JWT, SSRF, CORS, encryption), company-scoped RLS, per-company export formats, admin panel improvements |
 | v1.0.0 | ⏳ Planned | Domain, production deployment, Stripe payments |
 
 ---
@@ -72,6 +75,8 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 - 📋 Dokumentum struktúra elemzés: témák kiválasztása generálás előtt
 - ⚙️ Generálási beállítások: teszteset típus, fókuszterület, prioritás és darabszám vezérlése
 - 🔐 Authentikáció: bejelentkezés, admin panel, felhasználónkénti session és használati limitek, funkció kapcsolók
+- 🛡️ Biztonság: JWT auth minden edge functionön, szerver oldali rate limiting, SSRF védelem, titkosított Confluence tokenek, CORS allowlist
+- 🏢 Multi-tenant: cég-szintű RLS, cégenként konfigurálható export formátumok
 - 🔁 Valós idejű beállítások: az admin által módosított funkció kapcsolók azonnal frissülnek
 - 📖 Felhasználói útmutató: beépített kétnyelvű dokumentáció
 - 🌐 Kétnyelvű: magyar és angol felület
@@ -106,4 +111,5 @@ A QAgen egy mesterséges intelligencia alapú teszteset-generátor szoftverteszt
 | v0.11.0 | ✅ Kész | UX refaktor – progressive disclosure workflow, generálási beállítások panel, felhasználónkénti funkció láthatóság |
 | v0.12.0 | ✅ Kész | Új design rendszer, tipográfia egységesítés, dark mode perzisztencia, login és landing page újratervezés |
 | v0.13.0 | ✅ Kész | TestRail CSV export, Xray CSV export, költségkövetés admin panelen, felhasználói útmutató oldal |
+| v0.14.0 | ✅ Kész | Biztonsági megerősítés (JWT, SSRF, CORS, titkosítás), cég-szintű RLS, cégenként konfigurálható export formátumok, admin panel fejlesztések |
 | v1.0.0 | ⏳ Tervezett | Domain, éles deployment, Stripe fizetés |

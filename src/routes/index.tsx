@@ -20,7 +20,7 @@ const STRINGS = {
     ],
     pricingTitle: "Válassz csomagot",
     pricingTagline: "Tesztelők által fejlesztve. Tesztelőknek tervezve.",
-    footer: "QAgen v0.13.0",
+    footer: "QAgen v0.14.0",
     plans: [
       {
         name: "Starter",
@@ -81,7 +81,7 @@ const STRINGS = {
     ],
     pricingTitle: "Choose a plan",
     pricingTagline: "Built by testers. Designed for testers.",
-    footer: "QAgen v0.13.0",
+    footer: "QAgen v0.14.0",
     plans: [
       {
         name: "Starter",

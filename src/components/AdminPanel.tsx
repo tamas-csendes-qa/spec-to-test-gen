@@ -166,7 +166,9 @@ function CompaniesTab() {
     const next = current.includes(formatVal)
       ? current.filter((f) => f !== formatVal)
       : [...current, formatVal];
-    void updateCompany(company.id, { allowed_export_formats: next });
+    setCompanies((prev) => prev.map((co) => co.id === company.id ? { ...co, allowed_export_formats: next } : co));
+    void supabase.from("companies").update({ allowed_export_formats: next }).eq("id", company.id)
+      .then(({ error }) => { if (error) { console.error("Format update failed:", error); void load(); } });
   };
 
   const deleteCompany = async (id: string) => {
