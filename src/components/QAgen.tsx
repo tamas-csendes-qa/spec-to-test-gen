@@ -624,6 +624,7 @@ interface QAgenProps {
   monthlyGenerationLimit?: number;
   playwrightEnabled?: boolean;
   confluenceEnabled?: boolean;
+  allowedExportFormats?: string[] | null;
   onAdminClick?: () => void;
   onSignOut?: () => void;
 }
@@ -637,6 +638,7 @@ export function QAgen({
   monthlyGenerationLimit = 100,
   playwrightEnabled = false,
   confluenceEnabled = false,
+  allowedExportFormats = null,
   onAdminClick,
   onSignOut,
 }: QAgenProps = {}) {
@@ -1772,7 +1774,7 @@ export function QAgen({
                       { val: 'azurecsv' as Format, label: 'Azure DevOps CSV' },
                       { val: 'testrailcsv' as Format, label: 'TestRail CSV' },
                       { val: 'xraycsv' as Format, label: 'Xray CSV' },
-                    ]).map(({ val, label }) => {
+                    ]).filter(({ val }) => !allowedExportFormats || allowedExportFormats.length === 0 || allowedExportFormats.includes(val)).map(({ val, label }) => {
                       const sel = format === val;
                       return (
                         <button key={val} onClick={() => { setFormat(val); setResult(null); }} className="rounded-lg px-3 py-2 text-xs text-left transition-opacity hover:opacity-80" style={{ border: `1px solid ${sel ? accentColor : br}`, background: sel ? (dark ? '#0d1a38' : '#eff3ff') : (dark ? '#111b2e' : '#fafafa'), color: sel ? accentColor : mu, cursor: 'pointer' }}>{label}</button>

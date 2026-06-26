@@ -120,6 +120,14 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
+const ALL_FORMATS: { val: string; label: string }[] = [
+  { val: "gherkin", label: "Gherkin" },
+  { val: "zephyr", label: "Zephyr" },
+  { val: "azurecsv", label: "Azure" },
+  { val: "testrailcsv", label: "TestRail" },
+  { val: "xraycsv", label: "Xray" },
+];
+
 // ── Companies tab ────────────────────────────────────────────────────────────
 
 function CompaniesTab() {
@@ -148,9 +156,17 @@ function CompaniesTab() {
     void load();
   };
 
-  const updateCompany = async (id: string, name: string) => {
-    await supabase.from("companies").update({ name }).eq("id", id);
+  const updateCompany = async (id: string, updates: Partial<Company>) => {
+    await supabase.from("companies").update(updates).eq("id", id);
     void load();
+  };
+
+  const toggleFormat = (company: Company, formatVal: string) => {
+    const current = company.allowed_export_formats ?? ALL_FORMATS.map((f) => f.val);
+    const next = current.includes(formatVal)
+      ? current.filter((f) => f !== formatVal)
+      : [...current, formatVal];
+    void updateCompany(company.id, { allowed_export_formats: next });
   };
 
   const deleteCompany = async (id: string) => {
@@ -176,30 +192,54 @@ function CompaniesTab() {
             <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-left">Cégnév</th>
+                <th className="px-4 py-3 text-left">Engedélyezett formátumok</th>
                 <th className="px-4 py-3 text-left">Létrehozva</th>
-                <th className="px-4 py-3 text-right">Műveletek</th>
+                <th className="px-4 py-3 text-right"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {companies.map((c) => (
-                <tr key={c.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <EditableName value={c.name} onSave={(name) => { void updateCompany(c.id, name); }} />
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString("hu")}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => { void deleteCompany(c.id); }}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {companies.map((c) => {
+                const enabled = c.allowed_export_formats ?? ALL_FORMATS.map((f) => f.val);
+                return (
+                  <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <EditableName value={c.name} onSave={(name) => { void updateCompany(c.id, { name }); }} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {ALL_FORMATS.map((f) => {
+                          const on = enabled.includes(f.val);
+                          return (
+                            <button
+                              key={f.val}
+                              onClick={() => toggleFormat(c, f.val)}
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors ${
+                                on
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                              }`}
+                            >
+                              {f.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString("hu")}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => { void deleteCompany(c.id); }}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {companies.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-muted-foreground">Még nincs cég felvéve.</td>
+                  <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">Még nincs cég felvéve.</td>
                 </tr>
               )}
             </tbody>

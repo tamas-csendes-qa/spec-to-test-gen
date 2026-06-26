@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { QAgen } from "@/components/QAgen";
 import { AdminPanel } from "@/components/AdminPanel";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 function AppRoute() {
   const { user, profile, sessionToken, loading, signOut } = useAuth();
@@ -11,6 +12,18 @@ function AppRoute() {
     typeof window !== 'undefined' && window.localStorage.getItem('qagen-dark-mode') === 'true'
   );
   const [showAdmin, setShowAdmin] = useState(false);
+  const [allowedFormats, setAllowedFormats] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (profile?.company_id) {
+      void supabase
+        .from("companies")
+        .select("allowed_export_formats")
+        .eq("id", profile.company_id)
+        .maybeSingle()
+        .then(({ data }) => setAllowedFormats(data?.allowed_export_formats ?? null));
+    }
+  }, [profile?.company_id]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -48,6 +61,7 @@ function AppRoute() {
       monthlyGenerationLimit={profile.monthly_generation_limit ?? 100}
       playwrightEnabled={profile.playwright_enabled ?? false}
       confluenceEnabled={profile.confluence_enabled ?? false}
+      allowedExportFormats={allowedFormats}
       onAdminClick={profile.is_admin ? () => setShowAdmin(true) : undefined}
       onSignOut={signOut}
     />

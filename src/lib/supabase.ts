@@ -21,6 +21,7 @@ export type UserProfile = {
 export type Company = {
   id: string;
   name: string;
+  allowed_export_formats: string[];
   created_at: string;
 };
 
