@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 // TODO: add the production frontend origin here once QAgen has a public domain (see CLAUDE.md v1.0.0 roadmap).
-const ALLOWED_ORIGINS = ["http://localhost:5173"];
+const ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:8080"];
 
 function getCorsHeaders(origin: string | null) {
   const allowOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
