@@ -356,8 +356,32 @@ async function callClaudeAPI(
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "API request failed");
+    const errText = await response.text();
+    console.error("[callClaudeAPI] error:", response.status, errText);
+    let msg = "API request failed";
+    try { msg = JSON.parse(errText).error ?? msg; } catch { msg = errText.slice(0, 300); }
+    throw new Error(msg);
+  }
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.includes("text/event-stream")) {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() ?? "";
+      for (const part of parts) {
+        if (!part.startsWith("data: ")) continue;
+        const ev = JSON.parse(part.slice(6));
+        if (ev.type === "done") return { result: ev.result, token_count: ev.token_count ?? 0, input_tokens: ev.input_tokens ?? 0, output_tokens: ev.output_tokens ?? 0 };
+        if (ev.type === "error") throw new Error(ev.error);
+      }
+    }
+    throw new Error("Stream ended without result");
   }
 
   const data = await response.json();

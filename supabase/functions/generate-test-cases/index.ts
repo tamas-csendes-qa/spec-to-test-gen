@@ -163,7 +163,7 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
@@ -171,16 +171,69 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || "Claude API request failed");
+    const errBody = await response.text();
+    console.error("[callClaude] API error:", response.status, errBody);
+    throw new Error(`Claude API error (${response.status}): ${errBody.slice(0, 200)}`);
   }
 
   const data = await response.json();
-  const text = data.content[0].text;
+  const textBlock = data.content?.find((b: { type: string }) => b.type === "text");
+  if (!textBlock) throw new Error("Claude API returned no text content");
   const input_tokens = data.usage?.input_tokens ?? 0;
   const output_tokens = data.usage?.output_tokens ?? 0;
-  const token_count = input_tokens + output_tokens;
-  return { text, input_tokens, output_tokens, token_count };
+  return { text: textBlock.text, input_tokens, output_tokens, token_count: input_tokens + output_tokens };
+}
+
+function streamClaude(apiKey: string, systemPrompt: string, userMessage: string, corsHeaders: Record<string, string>, maxTokens = 16000): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    async start(controller) {
+      const send = (obj: Record<string, unknown>) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: maxTokens, stream: true, system: systemPrompt, messages: [{ role: "user", content: userMessage }] }),
+        });
+        if (!res.ok) {
+          const errBody = await res.text();
+          send({ type: "error", error: `Claude API error (${res.status}): ${errBody.slice(0, 200)}` });
+          controller.close();
+          return;
+        }
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+            try {
+              const ev = JSON.parse(line.slice(6));
+              if (ev.type === "message_start") inputTokens = ev.message?.usage?.input_tokens ?? 0;
+              else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+                fullText += ev.delta.text;
+                send({ type: "delta", text: ev.delta.text });
+              } else if (ev.type === "message_delta") outputTokens = ev.usage?.output_tokens ?? 0;
+            } catch { /* skip */ }
+          }
+        }
+        send({ type: "done", result: fullText, input_tokens: inputTokens, output_tokens: outputTokens, token_count: inputTokens + outputTokens });
+      } catch (err) {
+        send({ type: "error", error: err instanceof Error ? err.message : "Stream error" });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(body, { headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
 }
 
 Deno.serve(async (req: Request) => {
@@ -233,7 +286,7 @@ Deno.serve(async (req: Request) => {
         .eq("user_id", user.id)
         .gte("last_active", thirtyMinAgo);
 
-      if ((activeSessionCount ?? 0) >= sessionLimit) {
+      if ((activeSessionCount ?? 0) > sessionLimit) {
         const message = requestLang === "hu"
           ? "Túl sok egyidejű bejelentkezés. Zárj be egy másik munkamenetet, majd próbáld újra."
           : "Too many concurrent sessions. Please close another session and try again.";
@@ -355,12 +408,7 @@ Deno.serve(async (req: Request) => {
       console.log("[generate] systemPrompt:", systemPrompt.slice(0, 500));
     }
 
-    const { text: result, input_tokens, output_tokens, token_count } = await callClaude(apiKey, systemPrompt, userMessage);
-
-    return new Response(
-      JSON.stringify({ result, input_tokens, output_tokens, token_count }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return streamClaude(apiKey, systemPrompt, userMessage, corsHeaders);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(
